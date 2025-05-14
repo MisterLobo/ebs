@@ -1,0 +1,31 @@
+steps:
+  # Docker Build
+  - name: 'docker'
+    args: ['build', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$_SERVICE_NAME:$COMMIT_SHA', '.']
+    id: 'docker-build'
+  # Docker Push
+  - name: 'docker'
+    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$_SERVICE_NAME:$COMMIT_SHA']
+    id: 'docker-push'
+  # chmod scripts
+  - name: ubuntu
+    entrypoint: chmod
+    args: ['+x', 'scripts/setup.sh', 'scripts/gcloud.sh']
+  # Deploy Manually
+  - name: ubuntu
+    entrypoint: bash
+    args: ['-c', 'scripts/gcloud.sh']
+    env:
+    - 'AR_HOSTNAME=$_AR_HOSTNAME'
+    - 'PROJECT_ID=$PROJECT_ID'
+    - 'AR_REPO=$_AR_REPO'
+    - 'SERVICE_NAME=$_SERVICE_NAME'
+    - 'COMMIT_SHA=$COMMIT_SHA'
+    - 'DEPLOY_REGION=$_DEPLOY_REGION'
+    - 'PLATFORM=$_PLATFORM'
+    id: 'deploy'
+timeout: 3600s
+images:
+  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$_SERVICE_NAME:$COMMIT_SHA'
+options:
+  logging: CLOUD_LOGGING_ONLY

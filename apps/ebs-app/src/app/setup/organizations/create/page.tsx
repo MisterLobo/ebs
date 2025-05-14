@@ -1,0 +1,27 @@
+import { BasicInformationStep, BillingInformationStep, CreateOrganizationSteps, StepItemWithChild, TermsAndConditionsStep } from './components/create-steps'
+
+const steps = [
+  {
+    label: 'Basic',
+    description: 'Provide organization name, country and details',
+    component: <BasicInformationStep />,
+  },
+  { label: 'Billing',
+    description: 'Provide billing inforation',
+    component: <BillingInformationStep />,
+  },
+  {
+    label: 'Terms and Conditions',
+    description: 'Accept the terms and conditions',
+    component: <TermsAndConditionsStep />
+  }
+] satisfies StepItemWithChild[]
+
+export default async function NewOrganization() {
+  return (
+    <div className="container min-h-screen pt-10 space-y-4">
+      <h1 className="text-3xl text-center">Create Organization</h1>
+      <CreateOrganizationSteps steps={steps} className="mx-auto max-w-xl" />
+    </div>
+  )
+}

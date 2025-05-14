@@ -2,7 +2,13 @@
   "name": "@event-booking-system/source",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "gcp-build": "nx build api",
+    "build-app": "nx build ebs-app",
+    "test-app": "nx test ebs-app",
+    "test-api": "nx test api",
+    "build-api": "nx build api"
+  },
   "private": true,
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",

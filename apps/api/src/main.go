@@ -132,6 +132,7 @@ var betweenfields validator.Func = func(fl validator.FieldLevel) bool {
 }
 
 func main() {
+	go boot.DownloadSDKFileFromS3()
 	go boot.InitScheduler()
 	go boot.InitBroker()
 	go boot.InitDb()
@@ -249,11 +250,12 @@ func main() {
 			ctx.JSON(http.StatusOK, gin.H{"uid": user.UID})
 		})
 
-	stripeWebhook := router.Group("/webhook")
-	stripeWebhook.POST("/stripe", func(ctx *gin.Context) {
+	stripeWebhook := router.Group("/webhook/stripe")
+	stripeWebhook.POST("/", func(ctx *gin.Context) {
 		payload := make([]byte, 65536)
 		ctx.Request.Body.Read(payload)
 
+		ctx.Status(http.StatusNoContent)
 	})
 
 	authorized := router.Group("/")

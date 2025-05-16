@@ -1,13 +1,19 @@
 package boot
 
 import (
+	"context"
 	"ebs/src/common"
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
+	"errors"
 	"log"
+	"os"
+	"path"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-co-op/gocron/v2"
 	"gorm.io/gorm"
 )
@@ -41,6 +47,11 @@ func InitBroker() {
 	lib.KafkaProducer("asdf")
 	go lib.KafkaCreateTopics("events-open", "events-close")
 	go common.EventsOpenConsumer()
+	go lib.S3ListObjects()
+	// go lib.S3CreateObjects()
+	go lib.SNSSubscribe()
+	go lib.SQSConsumer()
+	go lib.SchedulerTest()
 }
 
 func InitScheduler() {
@@ -156,5 +167,20 @@ func UpdateExpiredJobs() {
 		})
 	if err != nil {
 		log.Printf("Error while processing expired jobs: %s\n", err.Error())
+	}
+}
+
+func DownloadSDKFileFromS3() {
+	cwd, _ := os.Getwd()
+	sdkFilePath := path.Join(cwd, "admin-sdk-credentials.json")
+	_, err := os.Stat(sdkFilePath)
+	if errors.Is(err, os.ErrNotExist) {
+		client := lib.AWSGetS3Client()
+		adminSdkObjectKey := "admin-sdk-credentials.json"
+		secretsBucket := os.Getenv("S3_SECRETS_BUCKET")
+		client.GetObject(context.Background(), &s3.GetObjectInput{
+			Bucket: aws.String(secretsBucket),
+			Key:    aws.String(adminSdkObjectKey),
+		})
 	}
 }

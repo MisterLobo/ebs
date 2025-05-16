@@ -1,17 +1,12 @@
-# fly.toml app configuration file generated for ebs-api-test on 2025-05-15T03:10:43+08:00
+# fly.toml app configuration file generated for ebs-api-test on 2025-05-16T01:37:19Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
 app = 'ebs-api-test'
-primary_region = 'sea'
+primary_region = 'cdg'
 
 [build]
-  [build.args]
-    GO_VERSION = '1.23.4'
-
-[env]
-  PORT = '8080'
 
 [http_service]
   internal_port = 9090
@@ -25,3 +20,4 @@ primary_region = 'sea'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 1024

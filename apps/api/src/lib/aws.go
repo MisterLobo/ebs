@@ -10,14 +10,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	awsched "github.com/aws/aws-sdk-go-v2/service/scheduler"
 	schedulerTpes "github.com/aws/aws-sdk-go-v2/service/scheduler/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
 )
 
@@ -35,7 +33,7 @@ func awsGetSdkClient() (*aws.Config, error) {
 		log.Printf("Error loading default config: %s\n", err.Error())
 		return nil, err
 	}
-	iamRole := os.Getenv("AWS_IAM_ROLE_ARN")
+	/* iamRole := os.Getenv("AWS_IAM_ROLE_ARN")
 	stsClient := sts.NewFromConfig(cfg)
 	output, err := stsClient.AssumeRole(context.TODO(), &sts.AssumeRoleInput{
 		RoleArn:         aws.String(iamRole),
@@ -52,7 +50,7 @@ func awsGetSdkClient() (*aws.Config, error) {
 	if err != nil {
 		log.Printf("Error configuration: %s\n", err.Error())
 		return nil, err
-	}
+	} */
 
 	return &cfg, nil
 }

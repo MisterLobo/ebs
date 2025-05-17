@@ -133,9 +133,9 @@ var betweenfields validator.Func = func(fl validator.FieldLevel) bool {
 
 func main() {
 	go boot.DownloadSDKFileFromS3()
+	go boot.InitDb()
 	go boot.InitScheduler()
 	go boot.InitBroker()
-	go boot.InitDb()
 
 	/* app, err := firebase.NewApp(context.Background(), nil)
 	if err != nil {
@@ -166,6 +166,9 @@ func main() {
 
 	guest := router.Group("/")
 	guest.
+		GET("/", func(ctx *gin.Context) {
+			ctx.Status(http.StatusOK)
+		}).
 		POST("/login", func(ctx *gin.Context) {
 			var body types.RegisterUserRequestBody
 			if err := ctx.ShouldBindJSON(&body); err != nil {

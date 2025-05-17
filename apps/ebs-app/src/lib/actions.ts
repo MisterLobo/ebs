@@ -3,6 +3,7 @@
 import { cookies } from 'next/headers'
 import { Event, EventQueryFilters, NewEventRequestPayload, NewOrganizationRequestPayload, NewTicketRequestPayload, Organization, Ticket } from './types'
 import { notFound, redirect } from 'next/navigation'
+import { TurnstileServerValidationResponse } from '@marsidev/react-turnstile'
 
 export async function getActiveOrganization(): Promise<Organization | undefined> {
   const $cookies = await cookies()
@@ -399,4 +400,18 @@ export async function logout() {
   if ($cookies.has('token')) {
     $cookies.delete('token')
   }
+}
+
+export async function cfSiteverify(token: string): Promise<boolean> {
+  const cfSecretKey = process.env.CF_TURNSTILE_SECRET_KEY ?? ''
+
+  const response = await fetch(`https://challenges.cloudflare.com/turnstile/v0/siteverify`, {
+    method: 'POST',
+    body: `secret=${encodeURIComponent(cfSecretKey)}&response=${encodeURIComponent(token)}`,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  })
+  const validationResponse = await response.json() as TurnstileServerValidationResponse
+  return validationResponse.success
 }

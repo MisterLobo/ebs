@@ -12,6 +12,7 @@
   "private": true,
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
+    "@marsidev/react-turnstile": "^1.1.0",
     "@radix-ui/react-collapsible": "^1.1.8",
     "date-fns": "^4.1.0",
     "firebase": "^11.6.1",

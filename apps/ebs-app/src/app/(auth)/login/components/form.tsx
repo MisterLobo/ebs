@@ -1,18 +1,29 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { loginUser } from '@/lib/actions'
+import { cfSiteverify, loginUser } from '@/lib/actions'
 import { auth, provider } from '@/lib/firebase'
 import { signInWithPopup } from 'firebase/auth'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 
 export default function LoginForm() {
   const router = useRouter()
   const [error, setError] = useState<string>()
+	const [token, setToken] = useState<string>()
+	const turnstileRef = useRef<TurnstileInstance>(null)
   const login = async () => {
     setError(undefined)
+    if (turnstileRef.current?.isExpired()) {
+      setError('token has expired')
+    }
+    const success = await cfSiteverify(token as string)
+    if (!success) {
+      setError('Failed to verify captcha')
+      return
+    }
     try {
       const credential = await signInWithPopup(auth, provider)
       if (credential.user) {
@@ -30,9 +41,19 @@ export default function LoginForm() {
 
   return (
     <div className="flex flex-col items-center h-96 min-w-lg justify-center p-4 relative border rounded-xl">
-      {error && <p className="text-red-500">{ error }</p>}
+      {error && <p className="text-muted">{ error }</p>}
       <h1 className="text-4xl font-semibold leading-none my-4">LOG IN</h1>
-      <form className="flex space-y-4 w-full items-center justify-center">
+      <form className="flex flex-col space-y-4 w-full items-center justify-center">
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={process.env.NEXT_PUBLIC_CF_TURNSTILE_SITE_KEY as string}
+          onError={e => setError(`ERROR: ${e}`)}
+          onExpire={() => setError('ERROR: token has expired')}
+          onSuccess={token => {
+            setToken(token)
+            setError(undefined)
+          }}
+        />
         <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none w-fit" onClick={login}>Log in with Google</Button>
       </form>
       <div className="flex w-full items-center justify-center mt-4">

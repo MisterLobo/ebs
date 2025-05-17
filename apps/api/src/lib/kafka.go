@@ -32,7 +32,6 @@ func KafkaConsumer(groupId string) {
 		"bootstrap.servers": os.Getenv("KAFKA_BROKER"),
 		"group.id":          groupId,
 		"auto.offset.reset": "smallest",
-		"retry.backoff.ms":  100,
 	})
 
 	if err != nil {

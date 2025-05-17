@@ -164,11 +164,12 @@ func main() {
 		}
 	})
 
+	router.GET("/", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, "ok")
+	})
+
 	guest := router.Group("/")
 	guest.
-		GET("/", func(ctx *gin.Context) {
-			ctx.Status(http.StatusOK)
-		}).
 		POST("/login", func(ctx *gin.Context) {
 			var body types.RegisterUserRequestBody
 			if err := ctx.ShouldBindJSON(&body); err != nil {

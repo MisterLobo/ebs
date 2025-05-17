@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
@@ -145,6 +146,7 @@ func main() {
 	user, _ := auth.GetUserByEmail(context.Background(), "") */
 
 	router := gin.Default()
+	router.Use(cors.Default())
 
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
 		v.RegisterValidation("bookabledate", eventDateTimeValidatorFunc)

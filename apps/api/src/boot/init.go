@@ -7,6 +7,7 @@ import (
 	"ebs/src/lib"
 	"ebs/src/models"
 	"errors"
+	"io"
 	"log"
 	"os"
 	"path"
@@ -172,15 +173,37 @@ func UpdateExpiredJobs() {
 
 func DownloadSDKFileFromS3() {
 	cwd, _ := os.Getwd()
-	sdkFilePath := path.Join(cwd, "admin-sdk-credentials.json")
+	log.Printf("[S3] cwd:%s\n", cwd)
+	filename := "admin-sdk-credentials.json"
+	sdkFilePath := path.Join(cwd, filename)
 	_, err := os.Stat(sdkFilePath)
 	if errors.Is(err, os.ErrNotExist) {
 		client := lib.AWSGetS3Client()
-		adminSdkObjectKey := "admin-sdk-credentials.json"
+		adminSdkObjectKey := filename
 		secretsBucket := os.Getenv("S3_SECRETS_BUCKET")
-		client.GetObject(context.Background(), &s3.GetObjectInput{
+		object, err := client.GetObject(context.Background(), &s3.GetObjectInput{
 			Bucket: aws.String(secretsBucket),
 			Key:    aws.String(adminSdkObjectKey),
 		})
+		if err != nil {
+			log.Printf("[S3] Error retrieving object: %s\n", err.Error())
+			return
+		}
+		defer object.Body.Close()
+		file, err := os.Create(filename)
+		if err != nil {
+			log.Printf("Could not create file %s: %s\n", filename, err.Error())
+			return
+		}
+		defer file.Close()
+		body, err := io.ReadAll(object.Body)
+		if err != nil {
+			log.Printf("Couldn't read object body from %s: %s\n", filename, err.Error())
+			return
+		}
+		_, err = file.Write(body)
+		if err != nil {
+			log.Printf("Error writing to file: %s\n", err.Error())
+		}
 	}
 }

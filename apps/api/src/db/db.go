@@ -2,6 +2,7 @@ package db
 
 import (
 	"ebs/src/config"
+	"log"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -15,6 +16,7 @@ func GetDb() *gorm.DB {
 	}
 	_db, err := gorm.Open(postgres.Open(config.GetDSN()))
 	if err != nil {
+		log.Printf("Error connecting to database: %s\n", err.Error())
 		panic(err)
 	}
 	sqlDB, err := _db.DB()

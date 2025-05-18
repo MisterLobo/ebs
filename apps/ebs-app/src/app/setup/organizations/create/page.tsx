@@ -1,19 +1,16 @@
-import { BasicInformationStep, BillingInformationStep, CreateOrganizationSteps, StepItemWithChild, TermsAndConditionsStep } from './components/create-steps'
+import { CreateOrganizationSteps, StepItemWithChild } from './components/create-steps'
 
 const steps = [
   {
     label: 'Basic',
     description: 'Provide organization name, country and details',
-    component: <BasicInformationStep />,
   },
   { label: 'Billing',
     description: 'Provide billing inforation',
-    component: <BillingInformationStep />,
   },
   {
     label: 'Terms and Conditions',
     description: 'Accept the terms and conditions',
-    component: <TermsAndConditionsStep />
   }
 ] satisfies StepItemWithChild[]
 

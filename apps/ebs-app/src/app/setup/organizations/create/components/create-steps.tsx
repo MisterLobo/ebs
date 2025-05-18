@@ -37,7 +37,7 @@ export function CreateOrganizationSteps({ steps, className, ...props }: Props & 
         </Step>
         <Step title="Basic" description="Provide basic information about the Organization">
           <div className="bg-secondary text-primary my-4 flex min-h-64 items-center justify-center rounded-md border w-full">
-            <BillingInformationStep orgId={orgId} />
+            <BillingInformationStep orgId={orgId ?? 0} />
           </div>
         </Step>
         <Step title="Basic" description="Provide basic information about the Organization">
@@ -45,7 +45,7 @@ export function CreateOrganizationSteps({ steps, className, ...props }: Props & 
             <TermsAndConditionsStep />
           </div>
         </Step>
-        <FinalStep />
+        <FinalStep orgId={orgId ?? 0} />
       </Stepper>
     </div>
   )
@@ -136,17 +136,20 @@ export function BasicInformationStep({ onSuccess, onError }: { onSuccess?: (id: 
               </FormItem>
             )}
           />
-          <StepperFormActions disabled={busy} />
+          <StepperFormActions disabled={busy}/>
         </form>
       </Form>
     </div>
   )
 }
 
+type PropsWithId = {
+  orgId: number,
+}
 const BillingInforationSchema = z.object({
   onboarded: z.coerce.boolean(),
 })
-export function BillingInformationStep({ orgId }: { orgId?: number }) {
+export function BillingInformationStep({ orgId }: PropsWithId) {
   const { nextStep } = useStepper()
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -179,6 +182,7 @@ export function BillingInformationStep({ orgId }: { orgId?: number }) {
     setError(error) */
 
     if (!data.onboarded) {
+      setError('Must be onboarded on Stripe first')
       form.setError('onboarded', { message: 'Must be onboarded on Stripe first' })
       return
     }

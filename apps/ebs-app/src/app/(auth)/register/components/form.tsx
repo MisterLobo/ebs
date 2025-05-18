@@ -1,18 +1,26 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { registerUser } from '@/lib/actions'
+import { cfSiteverify, registerUser } from '@/lib/actions'
 import { auth, provider } from '@/lib/firebase'
+import { Turnstile, TurnstileInstance } from '@marsidev/react-turnstile'
 import { signInWithPopup } from 'firebase/auth'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 export default function RegisterForm() {
   const router = useRouter()
   const [error, setError] = useState<string>()
+	const [token, setToken] = useState<string>()
+  const turnstileRef = useRef<TurnstileInstance>(null)
   const register = async () => {
     setError(undefined)
+    const success = await cfSiteverify(token as string)
+    if (!success) {
+      setError('Failed to verify captcha')
+      return
+    }
     try {
       const credential = await signInWithPopup(auth, provider)
       if (credential.user) {
@@ -33,6 +41,16 @@ export default function RegisterForm() {
       {error && <p className="text-red-500">{ error }</p>}
       <h1 className="text-4xl font-semibold leading-none my-4">SIGN UP</h1>
       <form className="flex space-y-4 w-full items-center justify-center">
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={process.env.NEXT_PUBLIC_CF_TURNSTILE_SITE_KEY as string}
+          onError={e => setError(`ERROR: ${e}`)}
+          onExpire={() => setError('ERROR: token has expired')}
+          onSuccess={token => {
+            setToken(token)
+            setError(undefined)
+          }}
+        />
         <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none w-fit" onClick={register}>Sign up with Google</Button>
       </form>
       <div className="flex w-full items-center justify-center mt-4">

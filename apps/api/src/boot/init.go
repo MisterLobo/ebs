@@ -175,7 +175,7 @@ func DownloadSDKFileFromS3() {
 	cwd, _ := os.Getwd()
 	log.Printf("[S3] cwd:%s\n", cwd)
 	filename := "admin-sdk-credentials.json"
-	sdkFilePath := path.Join(cwd, filename)
+	sdkFilePath := path.Join("/secrets", filename)
 	_, err := os.Stat(sdkFilePath)
 	if errors.Is(err, os.ErrNotExist) {
 		client := lib.AWSGetS3Client()

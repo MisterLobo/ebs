@@ -14,7 +14,7 @@ import (
 func GetFirebaseAuth() (*auth.Client, error) {
 	cwd, _ := os.Getwd()
 	log.Println("cwd:", cwd)
-	opt := option.WithCredentialsFile(path.Join(cwd, "admin-sdk-credentials.json"))
+	opt := option.WithCredentialsFile(path.Join("/secrets", "admin-sdk-credentials.json"))
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
 		log.Fatalf("error initializing app: %v\n", err.Error())

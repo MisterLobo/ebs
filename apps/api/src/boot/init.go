@@ -178,6 +178,7 @@ func DownloadSDKFileFromS3() {
 	sdkFilePath := path.Join("/secrets", filename)
 	_, err := os.Stat(sdkFilePath)
 	if errors.Is(err, os.ErrNotExist) {
+		log.Println("File not found. Downloading...")
 		client := lib.AWSGetS3Client()
 		adminSdkObjectKey := filename
 		secretsBucket := os.Getenv("S3_SECRETS_BUCKET")
@@ -190,7 +191,7 @@ func DownloadSDKFileFromS3() {
 			return
 		}
 		defer object.Body.Close()
-		file, err := os.Create(filename)
+		file, err := os.Create(sdkFilePath)
 		if err != nil {
 			log.Printf("Could not create file %s: %s\n", filename, err.Error())
 			return
@@ -204,6 +205,9 @@ func DownloadSDKFileFromS3() {
 		_, err = file.Write(body)
 		if err != nil {
 			log.Printf("Error writing to file: %s\n", err.Error())
+			return
 		}
+		log.Println("File has been written")
 	}
+	log.Println("File exists!")
 }

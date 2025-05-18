@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button'
 import { useStepper } from '@/components/ui/stepper'
+import { switchOrganization } from '@/lib/actions'
 import { useRouter } from 'next/navigation'
 
 export function StepButtons() {
@@ -22,14 +23,19 @@ export function StepButtons() {
   )
 }
 
-export function FinalStep() {
+export function FinalStep({ orgId }: { orgId: number }) {
   const router = useRouter()
   const { hasCompletedAllSteps } = useStepper()
 
   if (!hasCompletedAllSteps) return null
 
   const continueToDashboard = async () => {
-    router.push('/dashboard')
+    const success = await switchOrganization(orgId)
+    if (success) {
+      router.push('/dashboard')
+    } else {
+      alert('Something went wrong')
+    }
   }
 
   return (

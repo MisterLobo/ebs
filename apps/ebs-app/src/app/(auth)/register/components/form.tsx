@@ -40,7 +40,7 @@ export default function RegisterForm() {
     <div className="flex flex-col items-center h-96 min-w-lg justify-center p-4 relative border rounded-xl">
       {error && <p className="text-red-500">{ error }</p>}
       <h1 className="text-4xl font-semibold leading-none my-4">SIGN UP</h1>
-      <form className="flex space-y-4 w-full items-center justify-center">
+      <form className="flex flex-col space-y-4 w-full items-center justify-center">
         <Turnstile
           ref={turnstileRef}
           siteKey={process.env.NEXT_PUBLIC_CF_TURNSTILE_SITE_KEY as string}

@@ -256,7 +256,6 @@ export async function getTickets(id: number, orgId?: number) {
     console.error('Error:', error)
     return []
   }
-  console.log('[data]:', data);
   
   return data as Ticket[]
 }
@@ -311,6 +310,38 @@ export async function createCheckoutSession(items: { qty: number, ticket: number
   return { url, error }
 }
 
+export async function resumeCheckoutSession(id: number, checkoutId: string) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/bookings/${id}/checkout`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'POST',
+    body: JSON.stringify({
+      checkout_id: checkoutId,
+    }),
+  })
+  const { url, error } = await response.json()
+  return { url, error }
+}
+
+export async function cancelReservation(bookingId: number) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/bookings/${bookingId}/cancel`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'PUT',
+  })
+  if (response.status !== 204) {
+    const { error } = await response.json()
+    return { ok: false, error }
+  }
+  return { ok: true }
+}
+
 export async function getReservations(org = false) {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
@@ -323,8 +354,7 @@ export async function getReservations(org = false) {
       'Authorization': `Bearer ${token}`,
     },
   })
-  const { data, count, error } = await response.json()
-  console.log('res: ', data, count, error);
+  const { data, error } = await response.json()
   
   return { data, error }
 }
@@ -391,8 +421,12 @@ export async function downloadTicket(id: number, resId: number) {
     },
     method: 'POST',
   })
+  if (response.status !== 200) {
+    const { error } = await response.json()
+    return { error }
+  }
   const resblob = await response.blob()
-  return resblob
+  return { blob: resblob }
 }
 
 export async function logout() {

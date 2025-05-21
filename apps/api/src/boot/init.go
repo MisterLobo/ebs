@@ -6,6 +6,7 @@ import (
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
+	"ebs/src/types"
 	"errors"
 	"io"
 	"log"
@@ -30,6 +31,7 @@ func InitDb() *gorm.DB {
 		&models.Booking{},
 		&models.Reservation{},
 		&models.Admission{},
+		&models.Transaction{},
 		&models.EventSubscription{},
 		&models.JobTask{},
 		&models.Setting{},
@@ -44,15 +46,29 @@ func InitDb() *gorm.DB {
 func InitBroker() {
 	go RecoverQueuedJobs()
 	go UpdateExpiredJobs()
-	lib.KafkaConsumer("footest")
-	lib.KafkaProducer("asdf")
+	go UpdateExpiredBookings()
+	// lib.KafkaConsumer("footest")
+	// lib.KafkaProducer("asdf")
 	go lib.KafkaCreateTopics("events-open", "events-close")
-	go common.EventsOpenConsumer()
+	go lib.TestRedis()
+	// go common.EventsOpenConsumer()
+
+	go InitTopics()
+	go InitQueues()
+
 	go lib.S3ListObjects()
-	// go lib.S3CreateObjects()
-	go lib.SNSSubscribe()
-	go lib.SQSConsumer()
-	go lib.SchedulerTest()
+	go common.SQSConsumers()
+	go common.SNSSubscribes()
+}
+
+func InitQueues() {
+	lib.SQSCreateQueue("PendingReservations")
+	lib.SQSCreateQueue("PendingTransactions")
+	lib.SQSCreateQueue("PaymentsProcessing")
+	lib.SQSCreateQueue("ExpiredBookings")
+}
+func InitTopics() {
+	// lib.SNSCreateTopic("ExpiredBookings")
 }
 
 func InitScheduler() {
@@ -171,11 +187,46 @@ func UpdateExpiredJobs() {
 	}
 }
 
+func UpdateExpiredBookings() {
+	db := db.GetDb()
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Event{}).
+			Where("date_time < ?", time.Now()).
+			Where("status IN (?)", []string{"notify", "draft"}).
+			Update("status", types.EVENT_EXPIRED).
+			Error; err != nil {
+			return err
+		}
+		var eventIDs []uint
+		if err := tx.
+			Model(&models.Event{}).
+			Where("status", types.EVENT_TICKETS_NOTIFY).
+			Where("date_time < ?", time.Now()).
+			Select("id").
+			Pluck("id", &eventIDs).
+			Error; err != nil {
+			return err
+		}
+		if err := tx.
+			Model(&models.Booking{}).
+			Where("event_id IN (?)", eventIDs).
+			Update("status", types.BOOKING_EXPIRED).
+			Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("Error while processing expired bookings: %s\n", err.Error())
+	}
+}
+
 func DownloadSDKFileFromS3() {
 	cwd, _ := os.Getwd()
 	log.Printf("[S3] cwd:%s\n", cwd)
 	filename := "admin-sdk-credentials.json"
-	sdkFilePath := path.Join("/secrets", filename)
+	secretsPath := os.Getenv("SECRETS_DIR")
+	sdkFilePath := path.Join(secretsPath, filename)
 	_, err := os.Stat(sdkFilePath)
 	if errors.Is(err, os.ErrNotExist) {
 		log.Println("File not found. Downloading...")

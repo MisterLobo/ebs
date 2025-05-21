@@ -2,14 +2,20 @@ package utils
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"ebs/src/config"
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
 	"ebs/src/types"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v82"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, creatorId uint) (uint, error) {
@@ -80,7 +87,7 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 			event.Deadline = deadline
 			if params.Mode == "scheduled" {
 				event.OpensAt = &opensAt
-				event.Status = types.EVENT_NOTIFY
+				event.Status = types.EVENT_TICKETS_NOTIFY
 				opens_at = &opensAt
 			}
 		}
@@ -110,6 +117,50 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 		}
 		eventId = event.ID
 
+		// Set a schedule for completing the event
+		go func() {
+			runsAt := event.DateTime
+			runDate := time.Date(
+				runsAt.UTC().Year(),
+				runsAt.UTC().Month(),
+				runsAt.UTC().Day(),
+				runsAt.UTC().Hour(),
+				runsAt.UTC().Minute(),
+				0,
+				0,
+				runsAt.UTC().Location(),
+			)
+			log.Printf("[DateTime] job scheduled at: %s\n", runDate)
+			jobTaskID := uuid.New()
+			payloadId := jobTaskID.String()
+			jobTask := models.JobTask{
+				Name:    fmt.Sprintf("Event_%d_DateTime", eventId),
+				JobType: "OneTimeJobStartDateTime",
+				RunsAt:  runDate,
+				HandlerParams: []any{
+					eventId,
+				},
+				PayloadID: payloadId,
+				Payload: map[string]any{
+					"payloadId":        payloadId,
+					"id":               int64(eventId),
+					"producerClientId": "EventsToCompleteProducer",
+					"topic":            "EventsToComplete",
+					"table":            "events",
+				},
+				Source:     "Events",
+				SourceType: "table",
+				Topic:      "EventsToComplete",
+			}
+			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
+			if err != nil {
+				log.Printf("Error creating job for Event: id=%d error=%s\n", eventId, err.Error())
+				return
+			}
+			log.Printf("Created job for Event[%d] with ID %s\n", eventId, id)
+		}()
+
+		// Set a schedule for Closing the ticket reservation
 		go func() {
 			runsAt := event.Deadline
 			runDate := time.Date(
@@ -126,7 +177,7 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 			jobTaskID := uuid.New()
 			payloadId := jobTaskID.String()
 			jobTask := models.JobTask{
-				Name:    fmt.Sprintf("Event:%d:deadline", eventId),
+				Name:    fmt.Sprintf("Event_%d_Deadline", eventId),
 				JobType: "OneTimeJobStartDateTime",
 				RunsAt:  runDate,
 				HandlerParams: []any{
@@ -136,12 +187,13 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 				Payload: map[string]any{
 					"payloadId":        payloadId,
 					"id":               int64(eventId),
-					"producerClientId": "events_close_producer",
-					"topic":            "events-close",
+					"producerClientId": "EventsToCloseProducer",
+					"topic":            "EventsToClose",
 					"table":            "events",
 				},
 				Source:     "Events",
 				SourceType: "table",
+				Topic:      "EventsToClose",
 			}
 			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
 			if err != nil {
@@ -173,7 +225,7 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 			jobTaskID := uuid.New()
 			payloadId := jobTaskID.String()
 			jobTask := models.JobTask{
-				Name:    fmt.Sprintf("Event:%d:OpensAt", eventId),
+				Name:    fmt.Sprintf("Event_%d_OpensAt", eventId),
 				JobType: "OneTimeJobStartDateTime",
 				RunsAt:  runDate,
 				HandlerParams: []any{
@@ -183,12 +235,13 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 				Payload: map[string]any{
 					"payloadId":        payloadId,
 					"id":               int64(eventId),
-					"producerClientId": "events_open_producer",
-					"topic":            "events-open",
+					"producerClientId": "EventsToOpenProducer",
+					"topic":            "EventsToOpen",
 					"table":            "events",
 				},
 				Source:     "Events",
 				SourceType: "table",
+				Topic:      "EventsToOpen",
 			}
 			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
 			if err != nil {
@@ -430,37 +483,118 @@ func DeleteTicket(id uint) error {
 	return err
 }
 
-func CreateReservation(params *types.CreateBookingRequestBody, userId uint) ([]uint, error) {
+func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csURL string, csID *string, requestId *uuid.UUID) (*uint, []uint, error) {
+	metadata := types.JSONB{
+		"requestId": requestId.String(),
+	}
 	db := db.GetDb()
-	bookingIds := []uint{}
+	reservationIDs := []uint{}
+	errors := make([]string, 0)
+	now := time.Now()
+	expirationTime := now.Add(1 * time.Hour)
+	var bookingId uint
 	err := db.Transaction(func(tx *gorm.DB) error {
-		now := time.Now()
-		expirationTime := now.Add(24 * time.Hour)
 		for _, v := range params.Items {
 			var ticket models.Ticket
-			tx.Where(&models.Ticket{ID: v.TicketID}).First(&ticket)
-			if ticket.ID < 1 {
-				err := fmt.Errorf("Could not find ticket %d", v.TicketID)
+			err := tx.Where(&models.Ticket{ID: v.TicketID}).First(&ticket).Error
+			if err != nil {
 				return err
 			}
+			var count int64
+			err = tx.
+				Model(&models.Reservation{}).
+				Select("COUNT(id)").
+				Where(clause.IN{Column: "status", Values: []any{types.RESERVATION_PENDING, types.RESERVATION_COMPLETED}}).
+				Where(&models.Reservation{TicketID: v.TicketID}).
+				Count(&count).
+				Error
+			if err != nil {
+				return err
+			}
+			slotsLeft := ticket.Limit - uint(count)
+			slots := slotsLeft - uint(v.Qty)
+			slotsToTake := 0
+			if slots > 0 && v.Qty > 0 {
+				slotsToTake = int(math.Min(float64(slots), float64(v.Qty)))
+			}
+
+			if slotsToTake == 0 {
+				err := fmt.Errorf("Ticket [%s] has no more slots available", ticket.Tier)
+				errors = append(errors, err.Error())
+				continue
+			}
+
+			metadata["slots_wanted"] = v.Qty
+			metadata["slots_taken"] = slotsToTake
 			subtotal := ticket.Price * float32(v.Qty)
 			r := models.Booking{
-				TicketID: v.TicketID,
-				Qty:      v.Qty,
-				Subtotal: subtotal,
-				Status:   "pending",
-				Currency: "usd",
-				UserID:   userId,
-				EventID:  ticket.EventID,
+				TicketID:          v.TicketID,
+				Qty:               v.Qty,
+				Subtotal:          subtotal,
+				Status:            string(types.BOOKING_PENDING),
+				Currency:          "usd",
+				UserID:            userId,
+				EventID:           ticket.EventID,
+				Metadata:          &metadata,
+				CheckoutSessionId: csID,
 			}
-			err := tx.Create(&r).Error
+			err = tx.Create(&r).Error
 			if err != nil {
 				err = fmt.Errorf("error in Booking transaction: %s\n", err.Error())
 				log.Println(err.Error())
 				return err
 			}
-			bookingIds = append(bookingIds, r.ID)
-			for range v.Qty {
+			bookingId = r.ID
+
+			txn := models.Transaction{
+				BookingID: bookingId,
+				Status:    types.TRANSACTION_PENDING,
+			}
+			err = tx.Create(&txn).Error
+
+			reservationIDs = append(reservationIDs, r.ID)
+			runsAt := expirationTime
+			go func() {
+				runDate := time.Date(
+					runsAt.UTC().Year(),
+					runsAt.UTC().Month(),
+					runsAt.UTC().Day(),
+					runsAt.UTC().Hour(),
+					runsAt.UTC().Minute(),
+					0,
+					0,
+					runsAt.UTC().Location(),
+				)
+				log.Printf("[ValidUntil] job scheduled at: %s\n", runDate)
+				jobTaskID := uuid.New()
+				payloadId := jobTaskID.String()
+				jobTask := models.JobTask{
+					Name:    fmt.Sprintf("Event_%d_ValidUntil", bookingId),
+					JobType: "OneTimeJobStartDateTime",
+					RunsAt:  runDate,
+					HandlerParams: []any{
+						bookingId,
+					},
+					PayloadID: payloadId,
+					Payload: map[string]any{
+						"payloadId":        payloadId,
+						"id":               int64(bookingId),
+						"producerClientId": "PendingTransactionsProducer",
+						"topic":            "PendingTransactions",
+						"table":            "reservations",
+					},
+					Source:     "Reservations",
+					SourceType: "table",
+					Topic:      "PendingTransactions",
+				}
+				id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
+				if err != nil {
+					log.Printf("Error creating job for Booking: id=%d error=%s\n", bookingId, err.Error())
+					return
+				}
+				log.Printf("Created job for Booking[%d] with ID %s\n", bookingId, id)
+			}()
+			for range slotsToTake {
 				reservation := models.Reservation{
 					TicketID:   v.TicketID,
 					BookingID:  r.ID,
@@ -477,10 +611,10 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint) ([]u
 	})
 	if err != nil {
 		log.Printf("CreateReservation failed: %s\n", err.Error())
-		return []uint{}, err
+		return &bookingId, []uint{}, err
 	}
 
-	return bookingIds, nil
+	return &bookingId, reservationIDs, nil
 }
 
 func GetOrgReservations(id uint) ([]models.Booking, error) {
@@ -492,17 +626,39 @@ func GetOrgReservations(id uint) ([]models.Booking, error) {
 func GetOwnReservations(id uint) ([]models.Booking, error) {
 	db := db.GetDb()
 	var bookings []models.Booking
-	err := db.Where(&models.Booking{UserID: id}).Preload("User").Preload("Tickets").Find(&bookings).Error
+	err := db.
+		Model(&models.Booking{}).
+		Where(&models.Booking{UserID: id}).
+		Preload("User").
+		Preload("Event").
+		Preload("Tickets").
+		Order("created_at DESC").
+		Find(&bookings).
+		Error
 	return bookings, err
 }
 
-func CreateStripeCheckout(params *types.CreateBookingRequestBody) (*string, error) {
+func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[string]string) (*string, *string, error) {
 	sc := lib.GetStripeClient()
 	successUrl := fmt.Sprintf("%s/checkout/callback/success", os.Getenv("APP_HOST"))
+	piParams := &stripe.CheckoutSessionCreatePaymentIntentDataParams{}
+	for k, v := range metadata {
+		piParams.AddMetadata(k, v)
+	}
 	createParams := stripe.CheckoutSessionCreateParams{
-		SuccessURL: stripe.String(successUrl),
-		UIMode:     stripe.String("hosted"),
-		Mode:       stripe.String("payment"),
+		SuccessURL:        stripe.String(successUrl),
+		UIMode:            stripe.String("hosted"),
+		Mode:              stripe.String("payment"),
+		PaymentIntentData: piParams,
+		AfterExpiration: &stripe.CheckoutSessionCreateAfterExpirationParams{
+			Recovery: &stripe.CheckoutSessionCreateAfterExpirationRecoveryParams{
+				Enabled: stripe.Bool(true),
+			},
+		},
+		InvoiceCreation: &stripe.CheckoutSessionCreateInvoiceCreationParams{
+			Enabled: stripe.Bool(true),
+		},
+		Metadata: metadata,
 	}
 
 	db := db.GetDb()
@@ -541,26 +697,27 @@ func CreateStripeCheckout(params *types.CreateBookingRequestBody) (*string, erro
 	})
 	if err != nil {
 		log.Printf("CreateStripeCheckout failed: %s\n", err.Error())
-		return nil, err
+		return nil, nil, err
 	}
+	log.Println("TEST 2")
 	createParams.LineItems = lineItems
 	log.Println("txn done:", len(lineItems))
 	checkoutSession, err := sc.V1CheckoutSessions.Create(context.Background(), &createParams)
-
 	if err != nil {
 		log.Printf("CreateStripeCheckout failed: %s\n", err.Error())
-		return nil, err
+		return nil, nil, err
 	}
+	log.Printf("CheckoutSessionID: %s\n", checkoutSession.ID)
 
-	return &checkoutSession.URL, nil
+	return &checkoutSession.URL, &checkoutSession.ID, nil
 }
 
-func UpdateEventStatus(id uint, status types.EventStatus) error {
+func UpdateEventStatus(id uint, newStatus types.EventStatus, oldStatus types.EventStatus) error {
 	db := db.GetDb()
 	log.Println("OpenEventStatus: Begin Transaction")
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var event models.Event
-		conds := &models.Event{ID: id, Status: types.EVENT_NOTIFY}
+		conds := &models.Event{ID: id, Status: oldStatus}
 		err := tx.Where(conds).First(&event).Error
 		if err != nil {
 			log.Printf("Failed to update event status: %s\n", err.Error())
@@ -570,7 +727,7 @@ func UpdateEventStatus(id uint, status types.EventStatus) error {
 			Model(&models.Event{}).
 			Where(conds).
 			Updates(&models.Event{
-				Status: types.EVENT_OPEN,
+				Status: newStatus,
 				Mode:   "default",
 			}).Error
 		if err != nil {
@@ -631,4 +788,53 @@ func EnqueueJobs() {
 		log.Printf("Error in boot Task: %s\n", err.Error())
 		return
 	}
+}
+
+func EncryptMessage(key []byte, message string) (string, error) {
+	plaintext := []byte(message)
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+
+	cipherText := gcm.Seal(nonce, nonce, plaintext, nil)
+	encodedString := hex.EncodeToString(cipherText)
+
+	return encodedString, nil
+}
+
+func DecryptMessage(key []byte, message string) (*string, error) {
+	cipherText, err := hex.DecodeString(message)
+	if err != nil {
+		return nil, err
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	decryptedData, err := gcm.Open(nil, cipherText[:gcm.NonceSize()], cipherText[gcm.NonceSize():], nil)
+	if err != nil {
+		return nil, err
+	}
+	decodedString := string(decryptedData)
+
+	return &decodedString, nil
 }

@@ -9,11 +9,13 @@ import (
 )
 
 func GetRedisClient() *redis.Client {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS_HOST"),
-		Password: "",
-		DB:       0,
-	})
+	redisHost := os.Getenv("REDIS_HOST")
+	opt, err := redis.ParseURL(redisHost)
+	if err != nil {
+		log.Printf("[redis] Error parsing connection string: %s\n", err.Error())
+		return nil
+	}
+	rdb := redis.NewClient(opt)
 	return rdb
 }
 

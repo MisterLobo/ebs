@@ -14,6 +14,7 @@ import (
 	"ebs/src/types"
 	"ebs/src/utils"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,7 +29,10 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/webhook"
+	"github.com/tidwall/gjson"
 	"github.com/yeqown/go-qrcode"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -135,8 +139,10 @@ var betweenfields validator.Func = func(fl validator.FieldLevel) bool {
 func main() {
 	go boot.DownloadSDKFileFromS3()
 	go boot.InitDb()
-	go boot.InitScheduler()
+	// boot.InitTopics()
+	// boot.InitQueues()
 	go boot.InitBroker()
+	go boot.InitScheduler()
 
 	/* app, err := firebase.NewApp(context.Background(), nil)
 	if err != nil {
@@ -180,6 +186,7 @@ func main() {
 			}
 			auth, err := lib.GetFirebaseAuth()
 			if err != nil {
+				log.Printf("Error initializing FirebaseAuth client: %s\n", err.Error())
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
@@ -192,7 +199,12 @@ func main() {
 
 			db := db.GetDb()
 			var muser models.User
-			if err := db.Model(&models.User{}).Select("id").Where(&models.User{Email: user.Email}).First(&muser).Error; err != nil {
+			if err := db.
+				Model(&models.User{}).
+				Select("id").
+				Where(&models.User{Email: user.Email}).
+				First(&muser).
+				Error; err != nil {
 				log.Printf("error: %s\n", err.Error())
 				ctx.JSON(http.StatusNotFound, gin.H{"error": "No user account is associated with this email"})
 				return
@@ -225,63 +237,254 @@ func main() {
 
 			db := db.GetDb()
 			var muser models.User
-			err = db.Model(&models.User{}).Select("id").Where(&models.User{Email: user.Email}).Find(&muser).Error
+			err = db.Transaction(func(tx *gorm.DB) error {
+				err := db.
+					Model(&models.User{}).
+					Select("id").
+					Where(&models.User{Email: user.Email}).
+					Find(&muser).
+					Error
 
+				if err != nil {
+					log.Printf("error: %s\n", err.Error())
+					err := errors.New("user already exists")
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return err
+				}
+
+				newUser := models.User{
+					Email: user.Email,
+					UID:   user.UID,
+					Role:  "owner",
+				}
+				err = db.Create(&newUser).Error
+				if err != nil {
+					return err
+				}
+
+				newOrg := models.Organization{
+					Name:    "Default",
+					OwnerID: newUser.ID,
+					Country: "",
+					Type:    "personal",
+				}
+				err = db.Create(&newOrg).Error
+				if err != nil {
+					return err
+				}
+
+				err = db.
+					Model(&models.User{}).
+					Where(&models.User{ID: newUser.ID}).
+					Update("active_org", newOrg.ID).Error
+				if err != nil {
+					return err
+				}
+				return nil
+			})
 			if err != nil {
-				log.Printf("error: %s\n", err.Error())
-				err := errors.New("user already exists")
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 
-			newUser := models.User{
-				Email: user.Email,
-				UID:   user.UID,
-				Role:  "owner",
-			}
-			db.Create(&newUser)
-
-			newOrg := models.Organization{
-				Name:    "Default",
-				OwnerID: newUser.ID,
-				Country: "",
-				Type:    "personal",
-			}
-			log.Println("new user:", newUser.ID)
-			db.Create(&newOrg)
-
-			log.Println("new org:", newOrg.ID)
-			db.Model(&models.User{}).Where(&models.User{ID: newUser.ID}).Update("active_org", newOrg.ID)
-
 			ctx.JSON(http.StatusOK, gin.H{"uid": user.UID})
 		})
 
-	stripeWebhook := router.Group("/webhook/stripe")
-	stripeWebhook.POST("/", func(ctx *gin.Context) {
+	router.POST("/webhook/stripe", func(ctx *gin.Context) {
 		payload := make([]byte, 65536)
-		ctx.Request.Body.Read(payload)
-
+		payload, err := io.ReadAll(ctx.Request.Body)
+		if err != nil {
+			log.Printf("Error reading request body: %s\n", err.Error())
+			ctx.Status(http.StatusServiceUnavailable)
+			return
+		}
+		whsecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
+		event, err := webhook.ConstructEvent(payload, ctx.GetHeader("Stripe-Signature"), whsecret)
+		if err != nil {
+			log.Printf("Error verifying webhook signature: %s\n", err.Error())
+			ctx.Status(http.StatusBadRequest)
+			return
+		}
+		log.Printf("[StripeEvent] %s\n", event.Type)
+		switch event.Type {
+		case "account.updated":
+			var acc stripe.Account
+			err := json.Unmarshal(event.Data.Raw, &acc)
+			if err != nil {
+				log.Printf("[Stripe] Error parsing Account: %s\n", err.Error())
+				break
+			}
+			break
+		case "capability.updated":
+			var cap stripe.Capability
+			err := json.Unmarshal(event.Data.Raw, &cap)
+			if err != nil {
+				log.Printf("[Stripe] Error parsing Capability: %s\n", err.Error())
+				break
+			}
+			break
+		case "payment_intent.created":
+			var pi stripe.PaymentIntent
+			err := json.Unmarshal(event.Data.Raw, &pi)
+			if err != nil {
+				log.Printf("[Stripe] Error parsing PaymentIntent: %s\n", err.Error())
+				break
+			}
+			log.Printf("[PaymentIntent] ID: %s %s\n", pi.ID, pi.Status)
+			md := pi.Metadata
+			log.Printf("[%s] Metadata: %v\n", pi.ID, md)
+			b := md["bookingId"]
+			atoi, err := strconv.Atoi(b)
+			if err != nil {
+				log.Printf("[%s] Error reading Metadata: %s\n", pi.ID, err.Error())
+				break
+			}
+			bookingId := uint(atoi)
+			go func() {
+				var booking models.Booking
+				db := db.GetDb()
+				err := db.Transaction(func(tx *gorm.DB) error {
+					err := tx.Where(&models.Booking{ID: bookingId}).First(&booking).Error
+					if err != nil {
+						return err
+					}
+					err = tx.Where(&models.Booking{ID: bookingId}).Updates(&models.Booking{
+						Status:          string(types.BOOKING_COMPLETED),
+						PaymentIntentId: &pi.ID,
+					}).Error
+					if err != nil {
+						log.Printf("Error updating Booking record [%d]: %s\n", bookingId, err.Error())
+						return err
+					}
+					err = tx.
+						Where(&models.Transaction{BookingID: bookingId, Status: types.TRANSACTION_PENDING}).
+						Updates(&models.Transaction{
+							SourceName:  "PaymentIntent",
+							SourceValue: pi.ID,
+							Status:      types.TRANSACTION_PROCESSING,
+						}).
+						Error
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					log.Printf("Error processing Transaction: %s\n", err.Error())
+					return
+				}
+			}()
+			break
+		case "payment_intent.succeeded":
+			var pi stripe.PaymentIntent
+			err := json.Unmarshal(event.Data.Raw, &pi)
+			if err != nil {
+				log.Printf("[Stripe] Error parsing PaymentIntent: %s\n", err.Error())
+				break
+			}
+			log.Printf("[PaymentIntent] ID: %s %s\n", pi.ID, pi.Status)
+			md := pi.Metadata
+			log.Printf("[%s] Metadata: %v\n", pi.ID, md)
+			requestId := md["requestId"]
+			b := md["bookingId"]
+			atoi, err := strconv.Atoi(b)
+			if err != nil {
+				log.Printf("[%s] Error reading Metadata: %s\n", pi.ID, err.Error())
+				break
+			}
+			bookingId := uint(atoi)
+			go func() {
+				var bookings []models.Booking
+				db := db.GetDb()
+				err := db.Transaction(func(tx *gorm.DB) error {
+					err := tx.Where("metadata ->> 'requestId' = ?", requestId).Pluck("id", &bookings).Error
+					if err != nil {
+						return err
+					}
+					err = tx.
+						Model(&models.Booking{}).
+						Where("metadata ->> 'requestId' = ?", requestId).
+						Updates(&models.Booking{
+							Status:          string(types.BOOKING_COMPLETED),
+							PaymentIntentId: &pi.ID,
+						}).Error
+					if err != nil {
+						log.Printf("Error updating Booking record [%d]: %s\n", bookingId, err.Error())
+						return err
+					}
+					for _, booking := range bookings {
+						err = tx.
+							Model(&models.Reservation{}).
+							Where("booking_id", booking.ID).
+							Preload("Event").
+							Updates(&models.Reservation{
+								Status:     string(types.RESERVATION_COMPLETED),
+								ValidUntil: booking.Event.DateTime,
+							}).
+							Error
+					}
+					err = tx.
+						Where(&models.Transaction{BookingID: bookingId, Status: types.TRANSACTION_PROCESSING}).
+						Updates(&models.Transaction{
+							Status: types.TRANSACTION_COMPLETED,
+						}).
+						Error
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					log.Printf("Error processing Transaction: %s\n", err.Error())
+					return
+				}
+			}()
+			break
+		case "checkout.session.completed":
+			var cs stripe.CheckoutSession
+			err := json.Unmarshal(event.Data.Raw, &cs)
+			if err != nil {
+				log.Printf("[Stripe] Error parsing CheckoutSession: %s\n", err.Error())
+				break
+			}
+			log.Printf("[CheckoutSession] ID: %s %s\n", cs.ID, cs.Status)
+			md := cs.Metadata
+			log.Printf("[%s] Metadata: %v\n", cs.ID, md)
+			requestId := md["requestId"]
+			go func() {
+				db := db.GetDb()
+				err := db.Transaction(func(tx *gorm.DB) error {
+					err = tx.
+						Model(&models.Booking{}).
+						Where("metadata ->> 'requestId' = ?", requestId).
+						Updates(&models.Booking{
+							CheckoutSessionId: &cs.ID,
+						}).
+						Error
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					log.Printf("Error updating Booking records: %s\n", err.Error())
+					return
+				}
+				sc := lib.GetStripeClient()
+				out, err := sc.V1CheckoutSessions.Expire(context.Background(), cs.ID, nil)
+				if err != nil {
+					log.Printf("Error expiring CheckoutSession [%s]: %s\n", out.ID, err.Error())
+					return
+				}
+			}()
+			break
+		}
 		ctx.Status(http.StatusNoContent)
 	})
 
 	authorized := router.Group("/")
 	authorized.Use(middlewares.AuthMiddleware)
 	{
-		authorized.
-			GET("/test", func(ctx *gin.Context) {
-				ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
-			})
-
-		/* authorized.
-			GET("/bookings", func(ctx *gin.Context) {
-				ctx.Status(200)
-			})
-
-		authorized.
-			GET("/admissions", func(ctx *gin.Context) {
-				ctx.Status(200)
-			}) */
-
 		authorized.
 			POST("/users", func(ctx *gin.Context) {}).
 			GET("/users/:id", func(ctx *gin.Context) {
@@ -299,10 +502,9 @@ func main() {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
-				log.Printf("filters: %v\n", filters)
 				orgs := make([]models.Organization, 0)
 				// TODO: remove when ADMIN feature is implemented
-				if (filters.Type == "standard" && !filters.Owned) || filters.Type != "standard" {
+				if (filters.Type == string(types.ORG_STANDARD) && !filters.Owned) || filters.Type != string(types.ORG_STANDARD) {
 					ctx.JSON(http.StatusOK, gin.H{"data": orgs})
 					return
 				}
@@ -389,6 +591,13 @@ func main() {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": "Error switching to organization"})
 					return
 				}
+				rd := lib.GetRedisClient()
+				err = rd.JSONSet(context.Background(), fmt.Sprintf("%d:active", userId), "$", org).Err()
+				if err != nil {
+					log.Printf("Error update cache: %s\n", err.Error())
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Something went wrong"})
+					return
+				}
 				ctx.SetCookie("token", tokenCookie, 3600, "/", os.Getenv("APP_HOST"), false, true)
 				ctx.JSON(http.StatusOK, gin.H{"access_token": tokenCookie})
 			}).
@@ -421,14 +630,14 @@ func main() {
 				db.Where(&models.Organization{ID: orgId, OwnerID: userId}).Find(&organization)
 				if organization.ID < 1 {
 					err := errors.New("Organization not found")
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return
 				}
 
 				activeOrgId := ctx.GetUint("org")
 				if activeOrgId != orgId {
 					err := errors.New("Event created must be for active organization")
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 					return
 				}
 				var events []models.Event
@@ -461,13 +670,13 @@ func main() {
 					First(&organization)
 				if organization.ID < 1 {
 					err := errors.New("Organization not found")
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return
 				}
 				activeOrgId := ctx.GetUint("org")
 				if activeOrgId != orgId {
 					err := errors.New("Event created must be for active organization")
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 					return
 				}
 				var event models.Event
@@ -507,7 +716,7 @@ func main() {
 				activeOrgId := ctx.GetUint("org")
 				if activeOrgId != orgId {
 					err := errors.New("Event created must be for active organization")
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 					return
 				}
 				var event models.Event
@@ -537,12 +746,12 @@ func main() {
 				db.Where(&models.Organization{ID: orgId, OwnerID: userId}).First(&organization)
 				if organization.ID < 1 {
 					err := errors.New("Organization not found")
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return
 				}
 				if activeOrgId != orgId && organization.OwnerID != userId {
 					err := errors.New("Organization not found")
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return
 				}
 				body := types.CreateEventRequestBody{
@@ -741,16 +950,33 @@ func main() {
 					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return
 				}
-				shared := org.Type == "standard"
+				shared := org.Type == string(types.ORG_STANDARD)
 				ctx.JSON(http.StatusOK, gin.H{"type": org.Type, "shared": shared})
 			}).
 			GET("/organizations/active", func(ctx *gin.Context) {
 				userId := ctx.GetUint("id")
+				rd := lib.GetRedisClient()
+				val, err := rd.JSONGet(context.Background(), fmt.Sprintf("%d:active", userId)).Result()
+				if err != nil {
+					log.Printf("Could not retrieve cache value: %s\n", err.Error())
+					ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+					return
+				}
+				if gjson.Valid(val) {
+					var orgval models.Organization
+					err := json.Unmarshal([]byte(val), &orgval)
+					if err != nil {
+						ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+						return
+					}
+					ctx.JSON(http.StatusOK, gin.H{"active": orgval})
+					return
+				}
 				var org models.Organization
 				var user models.User
 				db := db.GetDb()
 				ss := db.Session(&gorm.Session{PrepareStmt: true})
-				err := ss.Where(&models.User{ID: userId}).First(&user).Error
+				err = ss.Where(&models.User{ID: userId}).First(&user).Error
 				if err != nil {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
@@ -760,6 +986,7 @@ func main() {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
+				rd.JSONSet(context.Background(), fmt.Sprintf("%d:active", userId), "$", &org)
 				ctx.JSON(http.StatusOK, gin.H{"active": org})
 			}).
 			POST("/organizations", func(ctx *gin.Context) {
@@ -793,7 +1020,7 @@ func main() {
 					if err != nil {
 						return err
 					}
-					in1h := today.Add(1 * time.Hour)
+					in1h := today.Add(1 * time.Minute)
 					in3months := today.Add((24 * 30 * 3) * time.Hour)
 					err = tx.
 						Where(tx.
@@ -829,9 +1056,16 @@ func main() {
 				err := db.Transaction(func(tx *gorm.DB) error {
 					err := tx.
 						Model(&models.EventSubscription{}).
-						Select("id", "status", "event_id", "created_at").
-						Where(&models.EventSubscription{SubscriberID: userId}).
 						Preload("Event").
+						Where(tx.
+							Model(&models.EventSubscription{}).
+							Where(&models.EventSubscription{SubscriberID: userId}).
+							Where(clause.IN{Column: "status", Values: []any{
+								types.EVENT_SUBSCRIPTION_NOTIFY,
+								types.EVENT_SUBSCRIPTION_ACTIVE,
+							}})).
+						Select("id", "status", "event_id", "created_at").
+						Order("created_at DESC").
 						Find(&subscriptions).
 						Error
 					if err != nil {
@@ -1050,11 +1284,38 @@ func main() {
 							Booking: models.Booking{TicketID: params.TicketID},
 						}).
 						Preload("Booking").
+						Preload("Booking.Event").
 						First(&reservation).Error; err != nil {
 						return err
 					}
-					apiHost := os.Getenv("API_HOST")
-					qrc, err := qrcode.New(fmt.Sprintf("%s/tickets/%d/download/%d/code", apiHost, params.TicketID, params.ReservationID))
+					now := time.Now()
+					if now.After(reservation.Booking.Event.DateTime) {
+						err := errors.New("Ticket is no longer valid")
+						log.Printf("Error: %s\n", err.Error())
+						return err
+					}
+
+					rawData := map[string]any{
+						"ticketId":      params.TicketID,
+						"reservationId": params.ReservationID,
+					}
+					rawBytes, _ := json.Marshal(rawData)
+					rawText := string(rawBytes)
+
+					keyEnv := os.Getenv("API_QRC_SECRET")
+					key, err := hex.DecodeString(keyEnv)
+					if err != nil {
+						log.Printf("Could not read key from string: %s\n", err.Error())
+						return err
+					}
+
+					encryptedMessage, err := utils.EncryptMessage(key, rawText)
+					if err != nil {
+						log.Printf("Error encrypting message: %s\n", err.Error())
+						return err
+					}
+					log.Printf("Encrypted message: %s\n", encryptedMessage)
+					qrc, err := qrcode.New(encryptedMessage)
 					if err != nil {
 						return err
 					}
@@ -1069,7 +1330,7 @@ func main() {
 					return nil
 				})
 				if err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 					return
 				}
 				ctx.FileAttachment(filepath, "ticket.jpeg")
@@ -1224,8 +1485,8 @@ func main() {
 					return
 				}
 				ctx.JSON(http.StatusOK, gin.H{"data": reservation})
-			}).
-			POST("/bookings/reserve", func(ctx *gin.Context) {
+			})
+			/* POST("/bookings/reserve", func(ctx *gin.Context) {
 				var body types.CreateBookingRequestBody
 				if err := ctx.ShouldBindJSON(&body); err != nil {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1238,7 +1499,7 @@ func main() {
 					return
 				}
 				ctx.JSON(http.StatusCreated, gin.H{"url": url})
-			})
+			}) */
 
 		authorized.
 			GET("/bookings", func(ctx *gin.Context) {
@@ -1317,10 +1578,8 @@ func main() {
 					if err != nil {
 						return err
 					}
-					eventWhen := reservation.Booking.Event.DateTime
-					after := time.Now().After(eventWhen)
-					if after {
-						return errors.New("Cannot admit reservations for events in the past")
+					if reservation.Booking.Event.Status == types.EVENT_COMPLETED {
+						return errors.New("Window for admission has expired")
 					}
 					admission := models.Admission{
 						ReservationID: body.ReservationID,
@@ -1396,16 +1655,94 @@ func main() {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
-				url, err := utils.CreateStripeCheckout(&body)
+				userId := ctx.GetUint("id")
+				requestID := uuid.New()
+				url, csid, err := utils.CreateStripeCheckout(&body, map[string]string{
+					"requestId": requestID.String(),
+					"userId":    fmt.Sprint(userId),
+				})
 				if err != nil {
 					log.Printf("error on checkout: %s\n", err.Error())
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				}
+				go func() {
+					utils.CreateReservation(&body, userId, *url, csid, &requestID)
+				}()
+				log.Printf("URL: %s\n", *url)
+				ctx.JSON(http.StatusOK, gin.H{"url": url})
+			}).
+			POST("/bookings/:id/checkout", func(ctx *gin.Context) {
+				var params types.SimpleRequestParams
+				err := ctx.ShouldBindUri(&params)
+				if err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
-				log.Printf("URL: %s\n", *url)
-				userId := ctx.GetUint("id")
-				go utils.CreateReservation(&body, userId)
+
+				var body map[string]string
+				err = ctx.ShouldBindJSON(&body)
+				if err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+
+				id := body["checkout_id"]
+				var booking models.Booking
+				db := db.GetDb()
+				err = db.
+					Model(&models.Booking{}).
+					Where(&models.Booking{ID: params.ID, CheckoutSessionId: &id}).
+					First(&booking).
+					Error
+				if err != nil {
+					log.Printf("Could not find record [%d] with associated id: %s\n", params.ID, err.Error())
+					ctx.JSON(http.StatusNotFound, gin.H{"error": "Could not find record with associated id"})
+					return
+				}
+				if booking.Status != string(types.BOOKING_PENDING) {
+					err := errors.New("Could not continue to checkout due to expired reservation")
+					ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+					return
+				}
+				cs := lib.GetStripeClient()
+				data, err := cs.V1CheckoutSessions.Retrieve(context.Background(), id, nil)
+				if err != nil {
+					log.Printf("[Stripe] Unable to retrieve information: %s\n", err.Error())
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": "Unable to retrieve information"})
+					return
+				}
+				url := data.URL
 				ctx.JSON(http.StatusOK, gin.H{"url": url})
+			}).
+			PUT("/bookings/:id/cancel", func(ctx *gin.Context) {
+				var params types.SimpleRequestParams
+				err := ctx.ShouldBindUri(&params)
+				if err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				db := db.GetDb()
+				err = db.Transaction(func(tx *gorm.DB) error {
+					err := tx.
+						Where(&models.Booking{ID: params.ID}).
+						Updates(&models.Booking{Status: string(types.BOOKING_CANCELED)}).
+						Error
+					if err != nil {
+						return err
+					}
+					err = tx.Where(&models.Reservation{BookingID: params.ID}).Updates(&models.Reservation{Status: string(types.RESERVATION_CANCELED)}).Error
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					log.Printf("Could not complete request: %s\n", err.Error())
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": "Error processing request"})
+					return
+				}
+
+				ctx.Status(http.StatusNoContent)
 			})
 
 		authorized.

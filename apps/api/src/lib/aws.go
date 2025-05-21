@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -12,7 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	awsched "github.com/aws/aws-sdk-go-v2/service/scheduler"
-	schedulerTpes "github.com/aws/aws-sdk-go-v2/service/scheduler/types"
+	schedulerTypes "github.com/aws/aws-sdk-go-v2/service/scheduler/types"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
@@ -53,6 +55,27 @@ func awsGetSdkClient() (*aws.Config, error) {
 	} */
 
 	return &cfg, nil
+}
+
+func awsGetSecretsManagerClient() *secretsmanager.Client {
+	cfg, _ := awsGetSdkClient()
+	sm := secretsmanager.NewFromConfig(*cfg)
+	return sm
+}
+
+func AWSGetSecret(name string) string {
+	c := awsGetSecretsManagerClient()
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId:     aws.String(name),
+		VersionStage: aws.String("AWSCURRENT"),
+	}
+	result, err := c.GetSecretValue(context.TODO(), input)
+	if err != nil {
+		log.Printf("Error retrieving secret %s: %s\n", name, err.Error())
+		return ""
+	}
+	secretString := *result.SecretString
+	return secretString
 }
 
 func AWSGetSchedulerClient() *awsched.Client {
@@ -144,21 +167,21 @@ func SchedulerTest() {
 	strnow := in5m.Format("2006-01-02T15:04:05")
 	log.Printf("sched: %s\n", strnow)
 	sid := uuid.New().String()
-	roleArn := os.Getenv("AWS_EVENTBRIDGE_ROLE_ARN")
+	roleArn := os.Getenv("SCHEDULER_ROLE_ARN")
 	sched, err := client.CreateSchedule(context.TODO(), &awsched.CreateScheduleInput{
 		Name:      aws.String(fmt.Sprintf("schedule_%s", sid)),
 		StartDate: aws.Time(time.Now().Add(5 * time.Minute)),
-		Target: &schedulerTpes.Target{
-			Arn:     aws.String("arn:aws:sns:ap-southeast-1:645972258043:EventUpdateStatus"),
+		Target: &schedulerTypes.Target{
+			Arn:     aws.String("arn:aws:sns:ap-southeast-1:645972258043:PendingReservations"),
 			RoleArn: aws.String(roleArn),
 			Input:   aws.String("received 5 minutes later"),
-			RetryPolicy: &schedulerTpes.RetryPolicy{
+			RetryPolicy: &schedulerTypes.RetryPolicy{
 				MaximumRetryAttempts: aws.Int32(3),
 			},
 		},
-		FlexibleTimeWindow:    &schedulerTpes.FlexibleTimeWindow{Mode: schedulerTpes.FlexibleTimeWindowModeOff},
+		FlexibleTimeWindow:    &schedulerTypes.FlexibleTimeWindow{Mode: schedulerTypes.FlexibleTimeWindowModeOff},
 		ScheduleExpression:    aws.String(fmt.Sprintf("at(%s)", strnow)),
-		ActionAfterCompletion: schedulerTpes.ActionAfterCompletionDelete,
+		ActionAfterCompletion: schedulerTypes.ActionAfterCompletionDelete,
 	})
 	if err != nil {
 		log.Printf("Failed to create Schedule: %s\n", err.Error())
@@ -167,9 +190,8 @@ func SchedulerTest() {
 	log.Printf("Created schedule at: %s\n", *sched.ScheduleArn)
 }
 
-func SQSConsumer() {
+func SQSConsumer(qname string) {
 	client := AWSGetSQSClient()
-	qname := "EventUpdateStatus"
 	qurl, err := client.GetQueueUrl(context.TODO(), &sqs.GetQueueUrlInput{
 		QueueName: aws.String(qname),
 	})
@@ -177,6 +199,7 @@ func SQSConsumer() {
 		log.Printf("Failed to retrieve queue URL for %s: %s\n", qname, err.Error())
 		return
 	}
+	log.Printf("%s: Listening for messages...", qname)
 	messagesChan := make(chan *sqsTypes.Message, 5)
 	go func(chn chan<- *sqsTypes.Message) {
 		for {
@@ -190,19 +213,18 @@ func SQSConsumer() {
 				return
 			}
 			for _, m := range output.Messages {
-				log.Printf("Received message [%s] with body: %s\n", *m.MessageId, *m.Body)
+				// log.Printf("Received message [%s] with body: %s\n", *m.MessageId, *m.Body)
 				chn <- &m
 			}
 		}
 	}(messagesChan)
 
 	for m := range messagesChan {
-		log.Printf("Message with body: %s\n", *m.Body)
-		deleteMessage(client, qurl.QueueUrl, m)
+		SQSDeleteMessage(client, qurl.QueueUrl, m)
 	}
 }
 
-func deleteMessage(c *sqs.Client, qurl *string, msg *sqsTypes.Message) {
+func SQSDeleteMessage(c *sqs.Client, qurl *string, msg *sqsTypes.Message) {
 	_, err := c.DeleteMessage(context.TODO(), &sqs.DeleteMessageInput{
 		QueueUrl:      qurl,
 		ReceiptHandle: msg.ReceiptHandle,
@@ -214,16 +236,141 @@ func deleteMessage(c *sqs.Client, qurl *string, msg *sqsTypes.Message) {
 	log.Printf("Deleted message from queue: %s\n", *msg.MessageId)
 }
 
-func SNSSubscribe() {
+func SNSCreateTopic(name string) (string, error) {
+	owner := GetIAMUserArn(os.Getenv("AWS_IAM_USER"))
+	log.Printf("owner: %s\n", owner)
+	c := AWSGetSNSClient()
+	out, err := c.CreateTopic(context.TODO(), &sns.CreateTopicInput{
+		Name: aws.String(name),
+		Attributes: map[string]string{
+			"FifoTopic": "false",
+		},
+	})
+	if err != nil {
+		log.Printf("Error creating topic %s: %s\n", name, err.Error())
+		return "", err
+	}
+	log.Printf("[%s] Topic has been created\n", name)
+	return *out.TopicArn, nil
+}
+
+func SNSDeleteTopic(topic string) {
+	arn := GetTopicArn(topic)
+	c := AWSGetSNSClient()
+	_, err := c.DeleteTopic(context.TODO(), &sns.DeleteTopicInput{
+		TopicArn: aws.String(arn),
+	})
+	if err != nil {
+		log.Printf("Error deleting topic [%s]: %s\n", topic, err.Error())
+		return
+	}
+}
+
+func SQSDeleteQueue(q string) {
+	c := AWSGetSQSClient()
+	_, err := c.GetQueueUrl(context.TODO(), &sqs.GetQueueUrlInput{
+		QueueName: aws.String(q),
+	})
+	if err != nil {
+		log.Printf("Error retrieving queue URL [%s]: %s\n", q, err.Error())
+		return
+	}
+	_, err = c.DeleteQueue(context.TODO(), &sqs.DeleteQueueInput{
+		QueueUrl: aws.String(""),
+	})
+	if err != nil {
+		log.Printf("Error deleting queue [%s]: %s\n", q, err.Error())
+		return
+	}
+}
+
+func SQSCreateQueue(name string) (string, error) {
+	memberId := os.Getenv("AWS_MEMBER_ID")
+	region := os.Getenv("AWS_REGION")
+	jpolicy := map[string]any{
+		"Version": "2012-10-17",
+		"Id":      "__default_policy_ID",
+		"Statement": []map[string]any{
+			{
+				"Sid":    "__owner_statement",
+				"Effect": "Allow",
+				"Principal": map[string]string{
+					"AWS": GetIAMUserArn(os.Getenv("AWS_IAM_USER")),
+				},
+				"Action":   "SQS:*",
+				"Resource": GetQueueArn(name),
+			},
+			{
+				"Sid":    fmt.Sprintf("topic-subscription-arn:aws:sns:%s:%s:%s", region, memberId, name),
+				"Effect": "Allow",
+				"Principal": map[string]string{
+					"Service": "sns.amazonaws.com",
+				},
+				"Action":   "SQS:SendMessage",
+				"Resource": GetQueueArn(name),
+				"Condition": map[string]any{
+					"ArnLike": map[string]string{
+						"aws:SourceArn": GetTopicArn(name),
+					},
+				},
+			},
+		},
+	}
+
+	bpolicy, _ := json.Marshal(jpolicy)
+	policy := string(bpolicy)
+	c := AWSGetSQSClient()
+	out, err := c.CreateQueue(context.TODO(), &sqs.CreateQueueInput{
+		QueueName: aws.String(name),
+		Attributes: map[string]string{
+			"DelaySeconds":                  "0",
+			"ReceiveMessageWaitTimeSeconds": "20",
+			"Policy":                        policy,
+		},
+	})
+	if err != nil {
+		log.Printf("Error creating queue %s: %s\n", name, err.Error())
+		return "", err
+	}
+	log.Printf("[%s] Queue has been created\n", name)
+	return *out.QueueUrl, nil
+}
+
+func SNSSubscribe(topic string, q string, proto string) {
+	topicArn := GetTopicArn(topic)
+	qArn := q
+	if proto == "sqs" {
+		qArn = GetQueueArn(q)
+	}
 	client := AWSGetSNSClient()
 	output, err := client.Subscribe(context.Background(), &sns.SubscribeInput{
-		Protocol: aws.String("sqs"),
-		TopicArn: aws.String("arn:aws:sns:ap-southeast-1:645972258043:EventUpdateStatus"),
-		Endpoint: aws.String("arn:aws:sqs:ap-southeast-1:645972258043:EventUpdateStatus"),
+		Protocol: aws.String(proto),
+		TopicArn: aws.String(topicArn),
+		Endpoint: aws.String(qArn),
 	})
 	if err != nil {
 		log.Printf("Error subscribing to topic: %s\n", err.Error())
 		return
 	}
 	log.Printf("Subscribed to topic: %s\n", *output.SubscriptionArn)
+}
+
+func GetTopicArn(topic string) string {
+	memberId := os.Getenv("AWS_MEMBER_ID")
+	region := os.Getenv("AWS_REGION")
+	topicArn := fmt.Sprintf("arn:aws:sns:%s:%s:%s", region, memberId, topic)
+	return topicArn
+}
+
+func GetQueueArn(q string) string {
+	memberId := os.Getenv("AWS_MEMBER_ID")
+	region := os.Getenv("AWS_REGION")
+	qArn := fmt.Sprintf("arn:aws:sqs:%s:%s:%s", region, memberId, q)
+	return qArn
+}
+
+func GetIAMUserArn(user string) string {
+	memberId := os.Getenv("AWS_MEMBER_ID")
+	arn := fmt.Sprintf("arn:aws:iam::%s:%s/%s", memberId, "user", user)
+	return arn
 }

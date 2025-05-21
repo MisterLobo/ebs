@@ -94,6 +94,7 @@ export type Ticket = {
   limit?: number,
   event_id?: number,
   stats?: TicketStats,
+  event?: Event,
 } & Timestamps
 
 type CartItemTicket = Pick<Ticket, 'id' | 'tier' | 'currency' | 'price' | 'limit' | 'limited' | 'stats'>
@@ -124,6 +125,9 @@ export type Booking = {
   user?: any,
   reserved_tickets?: Ticket[],
   reservations?: Reservation[],
+  checkout_session_id?: string,
+  payment_intent_id?: string,
+  metadata?: Metadata,
 } & Timestamps
 
 export type Reservation = {

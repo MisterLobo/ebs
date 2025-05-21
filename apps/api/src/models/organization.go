@@ -16,6 +16,7 @@ type Organization struct {
 	ContactEmail         string          `json:"email,omitempty"`
 	ConnectOnboardingURL *string         `json:"connect_onboarding_url,omitempty"`
 	Status               string          `gorm:"default:'pending'" json:"status,omitempty"`
+	Verified             bool            `gorm:"default:false" json:"verified,omitempty"`
 
 	Events []Event `gorm:"foreignKey:organizer_id" json:"-"`
 	Owner  User    `gorm:"foreignKey:owner_id" json:"-"`

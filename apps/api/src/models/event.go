@@ -23,19 +23,20 @@ type Event struct {
 	OpensAt     *time.Time        `json:"opens_at,omitempty"`
 	Deadline    time.Time         `json:"deadline,omitempty"`
 
-	Creator      User         `gorm:"foreignKey:created_by" json:"-"`
-	Organization Organization `gorm:"foreignKey:organizer_id" json:"-"`
-	Tickets      []Ticket     `json:"tickets,omitempty"`
-	Subscribers  []*User      `gorm:"many2many:event_subscriptions;" json:"subscribers,omitempty"`
+	Creator            User                `gorm:"foreignKey:created_by" json:"-"`
+	Organization       Organization        `gorm:"foreignKey:organizer_id" json:"-"`
+	Tickets            []Ticket            `json:"tickets,omitempty"`
+	Subscribers        []*User             `gorm:"many2many:event_subscriptions;" json:"subscribers,omitempty"`
+	EventSubscriptions []EventSubscription `gorm:"foreignKey:event_id" json:"event_susbcriptions,omitempty"`
 
 	types.Timestamps
 }
 
 type EventSubscription struct {
-	ID           uint   `gorm:"primarykey" json:"id"`
-	EventID      uint   `json:"event_id,omitempty"`
-	SubscriberID uint   `json:"subscriber_id,omitempty"`
-	Status       string `gorm:"default:'pending'" json:"status,omitempty"`
+	ID           uint                          `gorm:"primarykey" json:"id"`
+	EventID      uint                          `json:"event_id,omitempty"`
+	SubscriberID uint                          `json:"subscriber_id,omitempty"`
+	Status       types.EventSubscriptionStatus `gorm:"default:'notify'" json:"status,omitempty"`
 
 	User  User  `gorm:"foreignKey:subscriber_id" json:"-"`
 	Event Event `gorm:"foreignKey:event_id" json:"event,omitempty"`

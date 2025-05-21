@@ -4,10 +4,10 @@ import (
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/types"
+	"encoding/json"
 	"log"
 	"time"
 
-	"github.com/go-co-op/gocron/v2"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -24,34 +24,31 @@ type JobTask struct {
 	Source        string      `json:"-"`
 	SourceType    string      `json:"-"`
 	Status        string      `gorm:"default:'pending'" json:"-"`
+	Topic         string      `json:"-"`
 }
 
 func (self *JobTask) CreateAndEnqueueJobTask(jobTask JobTask) (string, error) {
 	var jobID string
 	db := db.GetDb()
+	now := time.Now().UTC()
+	in5m := now.Add(5 * time.Minute)
+	strnow := in5m.Format("2006-01-02T15:04:05")
 	err := db.Transaction(func(tx *gorm.DB) error {
-		scheduler, err := lib.GetScheduler()
+		eventId := jobTask.HandlerParams[0]
+		pBytes, err := json.Marshal(jobTask.Payload)
 		if err != nil {
+			log.Printf("Failed to marshal payload: %s\n", err.Error())
 			return err
 		}
-		eventId := jobTask.HandlerParams[0]
-		job, err := scheduler.NewJob(
-			gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(jobTask.RunsAt)),
-			gocron.NewTask(func(id uint) {
-				log.Println("Running scheduled task")
-				err := lib.KafkaProduceMessage(self.Payload["producerClientId"].(string), self.Payload["topic"].(string), jobTask.Payload)
-				if err != nil {
-					log.Printf("Error on producting message: %s\n", err.Error())
-					return
-				}
-			}, eventId),
-		)
+		sRunsAt := jobTask.RunsAt.Format("2006-01-02T15:04:05")
+		sPayload := string(pBytes)
+		sid, err := lib.CreateSchedule(jobTask.Name, jobTask.RunsAt, sRunsAt, jobTask.Topic, sPayload)
 		if err != nil {
 			log.Printf("Error creating job for Event: id=%d error=%s\n", eventId, err.Error())
 			return err
 		}
-		jobID = job.ID().String()
-		jobTask.ID = job.ID()
+		jobID = sid.String()
+		jobTask.ID = *sid
 		jobTask.Payload["JobID"] = jobID
 		err = tx.Create(&jobTask).Error
 		if err != nil {
@@ -62,5 +59,6 @@ func (self *JobTask) CreateAndEnqueueJobTask(jobTask JobTask) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	log.Printf("Created schedule for job %s with name %s at %s\n", jobID, jobTask.Name, strnow)
 	return jobID, nil
 }

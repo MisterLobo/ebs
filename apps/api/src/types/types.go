@@ -123,6 +123,10 @@ type ReservationTicket struct {
 	Qty      uint8 `json:"qty" binding:"required"`
 }
 
+type SimpleRequestParams struct {
+	ID uint `uri:"id" binding:"required"`
+}
+
 type CreateBookingRequestBody struct {
 	Items []ReservationTicket `json:"items" binding:"required,min=1" `
 }
@@ -132,7 +136,8 @@ type RegisterUserRequestBody struct {
 }
 
 type CreateAdmissionRequestBody struct {
-	ReservationID uint `json:"reservation_id" binding:"required"`
+	ReservationID uint   `json:"reservation_id"`
+	Code          string `json:"code" binding:"required"`
 }
 
 type Status string
@@ -147,11 +152,59 @@ const (
 type EventStatus string
 
 const (
-	EVENT_DRAFT    EventStatus = "draft"
-	EVENT_OPEN     EventStatus = "open"
-	EVENT_NOTIFY   EventStatus = "notify"
-	EVENT_CLOSED   EventStatus = "closed"
-	EVENT_ARCHIVED EventStatus = "archived"
+	EVENT_DRAFT          EventStatus = "draft"
+	EVENT_TICKETS_NOTIFY EventStatus = "notify"
+	EVENT_TICKETS_OPEN   EventStatus = "open"
+	EVENT_TICKETS_CLOSED EventStatus = "closed"
+	EVENT_COMPLETED      EventStatus = "completed"
+	EVENT_EXPIRED        EventStatus = "expired"
+	EVENT_CANCELED       EventStatus = "canceled"
+	EVENT_ARCHIVED       EventStatus = "archived"
+)
+
+type EventSubscriptionStatus string
+
+const (
+	EVENT_SUBSCRIPTION_NOTIFY   EventSubscriptionStatus = "notify"
+	EVENT_SUBSCRIPTION_ACTIVE   EventSubscriptionStatus = "active"
+	EVENT_SUBSCRIPTION_DISABLED EventSubscriptionStatus = "disabled"
+)
+
+type TicketStatus string
+
+const (
+	TICKET_DRAFT       = "draft"
+	TICKET_OPEN        = "open"
+	TICKET_CLOSED      = "closed"
+	TICKET_ARCHIVED    = "archived"
+	TICKET_UNAVAILABLE = "unavailable"
+)
+
+type ReservationStatus string
+
+const (
+	RESERVATION_PENDING   ReservationStatus = "pending"
+	RESERVATION_CANCELED  ReservationStatus = "canceled"
+	RESERVATION_COMPLETED ReservationStatus = "completed"
+)
+
+type BookingStatus string
+
+const (
+	BOOKING_PENDING   BookingStatus = "pending"
+	BOOKING_COMPLETED BookingStatus = "completed"
+	BOOKING_CANCELED  BookingStatus = "canceled"
+	BOOKING_EXPIRED   BookingStatus = "expired"
+)
+
+type TransactionStatus string
+
+const (
+	TRANSACTION_PENDING    TransactionStatus = "pending"
+	TRANSACTION_PROCESSING TransactionStatus = "processing"
+	TRANSACTION_COMPLETED  TransactionStatus = "paid"
+	TRANSACTION_CANCELED   TransactionStatus = "canceled"
+	TRANSACTION_EXPIRED    TransactionStatus = "expired"
 )
 
 type OrganizationType string
@@ -275,3 +328,5 @@ type CreateSettingRequestBody struct {
 	Value any    `json:"value" binding:"required"`
 	Group string `json:"group" binding:"required"`
 }
+
+type Handler func(payload string)

@@ -25,8 +25,7 @@ export default function EventCard({ data }: Props) {
       return
     }
     setBusy(true)
-    const { id, error } = await subscribeToEvent(data.id)
-    console.log('[error]:', error)
+    const { id } = await subscribeToEvent(data.id)
     setSubscription(id)
     router.refresh()
   }, [data?.id])

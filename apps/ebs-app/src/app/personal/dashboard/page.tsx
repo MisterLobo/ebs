@@ -1,41 +1,37 @@
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { getReservations } from '@/lib/actions'
-import { format } from 'date-fns'
-import ReservationCardActions from './components/card-actions'
-import { Booking } from '@/lib/types'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { LoaderCircle } from 'lucide-react'
+import { Suspense } from 'react'
+import { PersonalDashboardClient } from './client'
 
 export default async function PersonalDashboard() {
-  const { data, error } = await getReservations()
-  if (error) {
-    console.log('[error]:', error);
-  }
-  const reservations = data as Booking[]
-  
   return (
     <main className="p-6">
       <h1 className="text-3xl font-semibold">My Dashboard</h1>
-      {reservations?.length > 0 ?
-      <>
-      <h2 className="text-xl">Reservations: { reservations?.length }</h2>
-      <div className="flex flex-col gap-4 items-center justify-center">
-      {reservations.map((res, index: number) => (
-        <Card key={index} className="w-3xl h-auto">
-          <CardHeader>
-            <p className="text-xs">{ format(new Date(res.created_at as string), 'PPP p') }</p>
-            <CardTitle>{ res.reserved_tickets?.length } entries</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>${ Number(res.subtotal).toLocaleString('en-US', { minimumFractionDigits: 2 }) }</p>
-            <CardAction>
-              <ReservationCardActions data={res} />
-            </CardAction>
-          </CardContent>
-        </Card>
-      ))}
-      </div>
-      </> :
-      <p className="text-center">No reservations</p>
-      }
+      <Suspense fallback={
+        <>
+        <h2 className="text-xl">Reservations: <LoaderCircle className="animate-spin" /></h2>
+        <div className="flex flex-col gap-4 items-center justify-center">
+          <Tabs defaultValue="completed">
+            <TabsList className="w-fit">
+              <TabsTrigger value="completed">Completed</TabsTrigger>
+              <TabsTrigger value="pending">Pending</TabsTrigger>
+              <TabsTrigger value="Canceled">Canceled</TabsTrigger>
+            </TabsList>
+            <TabsContent value="completed" className="w-3xl h-auto">
+              <LoaderCircle className="animate-spin" />
+            </TabsContent>
+            <TabsContent value="pending" className="w-3xl h-auto">
+              <LoaderCircle className="animate-spin" />
+            </TabsContent>
+            <TabsContent value="Canceled" className="w-3xl h-auto">
+              <LoaderCircle className="animate-spin" />
+            </TabsContent>
+          </Tabs>
+        </div>
+        </>
+      }>
+        <PersonalDashboardClient />
+      </Suspense>
     </main>
   )
 }

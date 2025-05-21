@@ -3,6 +3,7 @@ import './global.css';
 import { cn } from '@/lib/utils';
 import { cookies } from 'next/headers';
 import { fontVariables } from "@/lib/fonts";
+import { Toaster } from '@/components/ui/sonner';
 
 export const metadata = {
   title: 'EBS',
@@ -35,6 +36,7 @@ export default async function RootLayout({
         >
           {children}
         </ThemeProvider>
+        <Toaster />
       </body>
     </html>
   );

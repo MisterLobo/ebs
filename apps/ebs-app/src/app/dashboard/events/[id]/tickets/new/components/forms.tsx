@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -41,10 +41,6 @@ export default function NewTicketForm({ data }: Props) {
       tier: '',
     },
   })
-
-  useEffect(() => {
-    console.log('[data]:', data)
-  }, [data])
 
   const formSubmit = useCallback(async (data: z.infer<typeof formSchema>) => {
     const formData = {

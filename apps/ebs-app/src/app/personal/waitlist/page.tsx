@@ -22,7 +22,7 @@ export default async function WaitlistPage() {
         <p className="text-center italic text-neutral-300 text-xl">Your waitlist is empty</p>
       </div> :
       <>
-      <h2 className="text-xl">Reservations: { data?.length }</h2>
+      <h2 className="text-xl">Subscription: { data?.length }</h2>
       <div className="flex flex-col gap-4 items-center">
       {data.map((res: any, index: number) => (
         <WaitlistItem key={index} data={res} />

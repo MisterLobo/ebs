@@ -37,7 +37,7 @@ export function EventPageHeaderActions({ event }: Props) {
         <PlusIcon />
         <span>NEW TICKET</span>
       </Button>
-      {event?.status === 'draft' && <Button type="button" className="cursor-pointer" onClick={publish} disabled={busy}>{ busy ? 'PUBLISHING' : 'PUBLISH' }</Button>}
+      {['draft', 'notify'].includes(event?.status ?? '') && <Button type="button" className="cursor-pointer" onClick={publish} disabled={busy}>{ busy ? 'PUBLISHING' : 'PUBLISH' }</Button>}
     </div>
   )
 }

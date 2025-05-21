@@ -84,7 +84,6 @@ export default function NewEventForm() {
       mode: scheduled ? 'scheduled' : 'default',
       date_time: when,
     } as NewEventRequestPayload
-    console.log('[formData]:', formData)
 
     const { error } = await createEvent(formData)
     if (error) {

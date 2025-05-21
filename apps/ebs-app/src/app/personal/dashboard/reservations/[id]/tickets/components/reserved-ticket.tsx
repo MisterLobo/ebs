@@ -3,25 +3,36 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { downloadTicket } from '@/lib/actions'
-import { Reservation, Ticket } from '@/lib/types'
+import { Booking, Reservation, Ticket } from '@/lib/types'
+import { isUpcoming } from '@/lib/utils'
 import { IconTransfer } from '@tabler/icons-react'
+import { format } from 'date-fns'
 import { DollarSign, Download, Share2 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 type Props = {
   data?: Ticket,
   reservation?: Reservation,
+  booking?: Booking,
 }
-export default function ReservedTicket({ data, reservation }: Props) {
+export default function ReservedTicket({ data, booking, reservation }: Props) {
   const [busy, setBusy] = useState(false)
   const [url, setUrl] = useState<string>()
   const link = useRef<HTMLAnchorElement>(null)
+  const canUse = useMemo(() => isUpcoming(booking?.event?.date_time as string), [reservation])
   const downloadQrCode = useCallback(async () => {
     if (!data) {
       return
     }
     setBusy(true)
-    const blob = await downloadTicket(data.id, reservation?.id as number)
+    const { blob, error } = await downloadTicket(data.id, reservation?.id as number)
+    if (error) {
+      toast('ERROR', {
+        description: error,
+      })
+      return
+    }
     if (blob) {
       const url = URL.createObjectURL(new Blob([blob], { type: 'image/jpeg' }))
       setUrl(url)
@@ -39,10 +50,12 @@ export default function ReservedTicket({ data, reservation }: Props) {
         <CardTitle>#{ reservation?.id } { data?.tier } { data?.type }</CardTitle>
       </CardHeader>
       <CardContent>
+        {canUse ? <p>Valid until: { format(new Date(booking?.event?.date_time as string), 'PPP p') }</p> : <p className="text-orange-500">Ticket has expired</p>
+        }
         <p>{ data?.currency?.toUpperCase() } { data?.price?.toLocaleString('en-US', { minimumFractionDigits: 2 }) }</p>
         <CardAction className="space-x-2">
-          <Button type="button" className="cursor-pointer disabled:pointer-events-none"><Share2 /> SHARE</Button>
-          <Button type="button" className="cursor-pointer disabled:pointer-events-none" onClick={downloadQrCode} disabled={busy}><Download /> DOWNLOAD QR CODE</Button>
+          <Button type="button" className="cursor-pointer disabled:pointer-events-none" disabled={!canUse}><Share2 /> SHARE</Button>
+          <Button type="button" className="cursor-pointer disabled:pointer-events-none" onClick={downloadQrCode} disabled={!canUse || busy}><Download /> DOWNLOAD QR CODE</Button>
           <Button type="button" variant="secondary" className="cursor-pointer disabled:pointer-events-none" disabled><IconTransfer /> TRANSFER</Button>
           <Button type="button" variant="destructive" className="cursor-pointer disabled:pointer-events-none" disabled><DollarSign /> SELL</Button>
         </CardAction>

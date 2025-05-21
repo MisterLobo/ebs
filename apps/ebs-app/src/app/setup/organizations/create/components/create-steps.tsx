@@ -242,8 +242,6 @@ export function TermsAndConditionsStep() {
   })
 
   function onSubmit(data: z.infer<typeof TermsAndAgreementSchema>) {
-    console.log('[data]:', data);
-    
     if (!accepted) {
       form.setError('termsAccepted', { message: 'Terms and Conditions must be accepted' })
       return

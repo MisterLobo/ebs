@@ -16,7 +16,6 @@ export default async function PersonalTickets() {
   const reservationId = parseInt(id)
   const { data } = await getBookingTickets(reservationId)
   const booking = data as Booking
-  console.log('data:', data);
   
   return (
     <div className="flex flex-col w-full gap-2">
@@ -25,7 +24,7 @@ export default async function PersonalTickets() {
       {booking?.event?.date_time && <h3 className="text-xl">{ format(new Date(booking?.event?.date_time as string), 'PPPP p') }</h3>}
       <div className="flex flex-col items-center gap-4 my-10">
       {booking?.reservations?.map((t, i) => (
-        <ReservedTicket reservation={t} data={t.ticket} key={i} />
+        <ReservedTicket booking={booking} reservation={t} data={t.ticket} key={i} />
       ))}
       </div>
     </div>

@@ -5,6 +5,7 @@ import (
 	"ebs/src/models"
 	"ebs/src/types"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -19,12 +20,13 @@ var tokens []string
 func AuthMiddleware(ctx *gin.Context) {
 	bearerToken := ctx.Request.Header.Get("Authorization")
 	if !strings.HasPrefix(bearerToken, "Bearer") {
-		ctx.AbortWithStatus(401)
+		ctx.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 	reqToken := strings.Split(bearerToken, " ")[1]
 	if reqToken == "" {
-		ctx.AbortWithStatus(401)
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
 	}
 	claims := &types.Claims{}
 	tkn, err := jwt.ParseWithClaims(reqToken, claims, func(t *jwt.Token) (any, error) {
@@ -33,14 +35,14 @@ func AuthMiddleware(ctx *gin.Context) {
 	if err != nil {
 		log.Printf("token error: %s\n", err.Error())
 		if err == jwt.ErrSignatureInvalid || err == jwt.ErrTokenMalformed {
-			ctx.AbortWithStatus(401)
+			ctx.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		ctx.AbortWithError(401, err)
+		ctx.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
 	if !tkn.Valid {
-		ctx.AbortWithStatus(401)
+		ctx.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
@@ -50,17 +52,23 @@ func AuthMiddleware(ctx *gin.Context) {
 	uid, err := strconv.Atoi(claims.Subject)
 	if err != nil {
 		log.Println("error parsing claims:", err.Error())
-		ctx.AbortWithStatus(401)
-	}
-	db.Model(&models.User{}).Where(&models.User{ID: uint(uid)}).Find(&user)
-
-	if uint(uid) != user.ID || user.ID < 1 {
-		ctx.AbortWithStatus(401)
+		ctx.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
+	err = db.
+		Model(&models.User{}).
+		Where(&models.User{ID: uint(uid)}).
+		Find(&user).
+		Error
+	if err != nil {
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
 	ctx.Set("email", user.Email)
 	ctx.Set("id", user.ID)
 	ctx.Set("uid", user.UID)
 	ctx.Set("org", user.ActiveOrg)
 	ctx.Set("role", user.Role)
+	ctx.Set("perms", claims)
 }

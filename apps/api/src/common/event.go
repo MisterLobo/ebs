@@ -7,111 +7,191 @@ import (
 	"ebs/src/utils"
 	"encoding/json"
 	"log"
-	"os"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	awslib "ebs/src/lib/aws"
+
+	"github.com/tidwall/gjson"
 	"gorm.io/gorm"
 )
 
-func EventsOpenConsumer() {
-	log.Println("Setting up EventsOpenConsumer")
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": os.Getenv("KAFKA_BROKER"),
-		"group.id":          "events_open_consumer",
-		"auto.offset.reset": "smallest",
-	})
-	if err != nil {
-		log.Printf("Error creating consumer: %s", err.Error())
-		return
-	}
-	err = consumer.Subscribe("events-open", nil)
-	if err != nil {
-		log.Printf("Error on subscription: %s", err.Error())
-		return
-	}
-	run := true
-	for run == true {
-		ev := consumer.Poll(100)
-		switch e := ev.(type) {
-		case *kafka.Message:
-			var payload map[string]any = make(map[string]any)
-			log.Println("Payload received")
-			err := json.Unmarshal(e.Value, &payload)
+func EventsToOpenConsumer() {
+	qname := "EventsToOpen"
+	log.Printf("%s: Listening for messages...", qname)
+	c := awslib.NewSQSConsumer(qname, func(body string) {
+		if !gjson.Valid(body) {
+			log.Printf("[%s]: Received invalid json body. Aborting", qname)
+			return
+		}
+		val := gjson.Get(body, "Message.id")
+		log.Printf("[EventsToOpen] val: %f\n", val.Float())
+		var payload types.JSONB
+		err := json.Unmarshal([]byte(body), &payload)
+		if err != nil {
+			log.Printf("Error deserializing JSON: %s\n", err.Error())
+			return
+		}
+		message := payload["Message"].(string)
+		var msg types.JSONB
+		json.Unmarshal([]byte(message), &msg)
+		id := msg["id"].(float64)
+		eventId := uint(id)
+		log.Printf("eventId: %d\n", eventId)
+		// Update the event's status
+		go utils.UpdateEventStatus(eventId, types.EVENT_TICKETS_OPEN, types.EVENT_TICKETS_NOTIFY)
+		go func() {
+			db := db.GetDb()
+			err := db.Transaction(func(tx *gorm.DB) error {
+				err := tx.
+					Model(&models.EventSubscription{}).
+					Where(&models.EventSubscription{EventID: eventId, Status: types.EVENT_SUBSCRIPTION_NOTIFY}).
+					Update("status", types.EVENT_SUBSCRIPTION_ACTIVE).
+					Error
+				if err != nil {
+					return err
+				}
+				return nil
+			})
 			if err != nil {
-				log.Printf("Error parsing payload: %s\n", err.Error())
+				log.Printf("Error updating event subscription for [%d]: %s\n", eventId, err.Error())
 				return
 			}
-			log.Println("Payload deserialized")
-			idKey := payload["id"].(float64)
-			eventId := uint(idKey)
-			go utils.UpdateEventStatus(eventId, types.EVENT_OPEN)
-			// UPDATE JOB
-			go func() {
-				db := db.GetDb()
-				err := db.Transaction(func(tx *gorm.DB) error {
-					payloadId := payload["payloadId"].(string)
-					err := tx.Where(&models.JobTask{PayloadID: payloadId}).Updates(&models.JobTask{Status: "done"}).Error
-					if err != nil {
-						return err
-					}
-					return nil
-				})
+		}()
+		// UPDATE JOB
+		go func() {
+			db := db.GetDb()
+			err := db.Transaction(func(tx *gorm.DB) error {
+				payloadId := msg["payloadId"].(string)
+				err := tx.Where(&models.JobTask{PayloadID: payloadId}).Updates(&models.JobTask{Status: "done"}).Error
 				if err != nil {
-					log.Printf("Error updating job: %s\n", err.Error())
+					return err
 				}
-			}()
-			break
-		case kafka.Error:
-			log.Printf("Consumer for topic '%s' return an error: %s\n", "eventsopen", e.Error())
-			run = false
-		default:
-			break
-		}
-	}
-	log.Println("Received signal for topic. Closing")
-	consumer.Close()
+				return nil
+			})
+			if err != nil {
+				log.Printf("Error updating event status: %s\n", err.Error())
+			}
+		}()
+	})
+	c.Listen()
 }
 
-func EventsCloseConsumer() {
-	log.Println("Setting up EventsCloseConsumer")
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": os.Getenv("KAFKA_BROKER"),
-		"group.id":          "events_close_consumer",
-		"auto.offset.reset": "smallest",
-	})
-	if err != nil {
-		log.Printf("Error creating consumer: %s", err.Error())
-		return
-	}
-	err = consumer.Subscribe("events-close", nil)
-	if err != nil {
-		log.Printf("Error on subscription: %s", err.Error())
-		return
-	}
-	run := true
-	for run == true {
-		ev := consumer.Poll(100)
-		switch e := ev.(type) {
-		case *kafka.Message:
-			var payload map[string]any = make(map[string]any)
-			log.Println("Payload received")
-			err := json.Unmarshal(e.Value, &payload)
+func EventsToCloseConsumer() {
+	qname := "EventsToClose"
+	c := awslib.NewSQSConsumer(qname, func(body string) {
+		if !gjson.Valid(body) {
+			log.Printf("[%s]: Received invalid json body. Aborting", qname)
+			return
+		}
+		val := gjson.Get(body, "Message.id")
+		log.Printf("[EventsToClose] val: %f\n", val.Float())
+		var payload types.JSONB
+		err := json.Unmarshal([]byte(body), &payload)
+		if err != nil {
+			log.Printf("Error deserializing JSON: %s\n", err.Error())
+			return
+		}
+		message := payload["Message"].(string)
+		var msg types.JSONB
+		json.Unmarshal([]byte(message), &msg)
+		id := msg["id"].(float64)
+		eventId := uint(id)
+		log.Printf("eventId: %d\n", eventId)
+		// Update the event's status
+		go utils.UpdateEventStatus(eventId, types.EVENT_TICKETS_CLOSED, types.EVENT_TICKETS_OPEN)
+		go func() {
+			db := db.GetDb()
+			err := db.Transaction(func(tx *gorm.DB) error {
+				err := tx.
+					Model(&models.EventSubscription{}).
+					Where(&models.EventSubscription{EventID: eventId}).
+					Update("status", types.EVENT_TICKETS_CLOSED).
+					Error
+				if err != nil {
+					return err
+				}
+				return nil
+			})
 			if err != nil {
-				log.Printf("Error parsing payload: %s\n", err.Error())
+				log.Printf("Error updating event subscription for [%d]: %s\n", eventId, err.Error())
 				return
 			}
-			log.Println("Payload deserialized")
-			idKey := payload["id"].(float64)
-			eventId := uint(idKey)
-			go utils.UpdateEventStatus(eventId, types.EVENT_CLOSED)
-			break
-		case kafka.Error:
-			log.Printf("Consumer for topic '%s' return an error: %s\n", "eventsclose", e.Error())
-			run = false
-		default:
-			break
+		}()
+		// UPDATE JOB
+		go func() {
+			db := db.GetDb()
+			err := db.Transaction(func(tx *gorm.DB) error {
+				payloadId := msg["payloadId"].(string)
+				err := tx.Where(&models.JobTask{PayloadID: payloadId}).Updates(&models.JobTask{Status: "done"}).Error
+				if err != nil {
+					return err
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("Error updating event status: %s\n", err.Error())
+			}
+		}()
+	})
+	c.Listen()
+}
+
+func EventsToCompleteConsumer() {
+	qname := "EventsToComplete"
+	log.Printf("%s: Listening for messages...", qname)
+	c := awslib.NewSQSConsumer(qname, func(body string) {
+		if !gjson.Valid(body) {
+			log.Printf("[%s]: Received invalid json body. Aborting", qname)
+			return
 		}
-	}
-	log.Println("Received signal for topic. Closing")
-	consumer.Close()
+		val := gjson.Get(body, "Message.id")
+		log.Printf("[EventsToComplete] val: %f\n", val.Float())
+		var payload types.JSONB
+		err := json.Unmarshal([]byte(body), &payload)
+		if err != nil {
+			log.Printf("Error deserializing JSON: %s\n", err.Error())
+			return
+		}
+		message := payload["Message"].(string)
+		var msg types.JSONB
+		json.Unmarshal([]byte(message), &msg)
+		id := msg["id"].(float64)
+		eventId := uint(id)
+		log.Printf("eventId: %d\n", eventId)
+		// Update the event's status
+		go utils.UpdateEventStatus(eventId, types.EVENT_COMPLETED, types.EVENT_TICKETS_CLOSED)
+		go func() {
+			db := db.GetDb()
+			err := db.Transaction(func(tx *gorm.DB) error {
+				err := tx.
+					Model(&models.EventSubscription{}).
+					Where(&models.EventSubscription{EventID: eventId}).
+					Update("status", types.EVENT_COMPLETED).
+					Error
+				if err != nil {
+					return err
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("Error updating event subscription for [%d]: %s\n", eventId, err.Error())
+				return
+			}
+		}()
+		// UPDATE JOB
+		go func() {
+			db := db.GetDb()
+			err := db.Transaction(func(tx *gorm.DB) error {
+				payloadId := msg["payloadId"].(string)
+				err := tx.Where(&models.JobTask{PayloadID: payloadId}).Updates(&models.JobTask{Status: "done"}).Error
+				if err != nil {
+					return err
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("Error updating event status: %s\n", err.Error())
+			}
+		}()
+	})
+	c.Listen()
 }

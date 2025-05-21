@@ -268,7 +268,7 @@ func SNSDeleteTopic(topic string) {
 
 func SQSDeleteQueue(q string) {
 	c := AWSGetSQSClient()
-	_, err := c.GetQueueUrl(context.TODO(), &sqs.GetQueueUrlInput{
+	qout, err := c.GetQueueUrl(context.TODO(), &sqs.GetQueueUrlInput{
 		QueueName: aws.String(q),
 	})
 	if err != nil {
@@ -276,7 +276,7 @@ func SQSDeleteQueue(q string) {
 		return
 	}
 	_, err = c.DeleteQueue(context.TODO(), &sqs.DeleteQueueInput{
-		QueueUrl: aws.String(""),
+		QueueUrl: qout.QueueUrl,
 	})
 	if err != nil {
 		log.Printf("Error deleting queue [%s]: %s\n", q, err.Error())

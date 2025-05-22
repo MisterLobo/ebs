@@ -5,6 +5,7 @@ import (
 	"ebs/src/lib"
 	"ebs/src/types"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/stripe/stripe-go/v82"
@@ -20,10 +21,11 @@ type User struct {
 	ActiveOrg        uint            `json:"active_org,omitempty"`
 	EmailVerified    bool            `json:"email_verified,omitempty"`
 	PhoneVerified    bool            `json:"phone_verified,omitempty"`
-	VerifiedAt       time.Time       `json:"verified_at,omitempty"`
+	VerifiedAt       *time.Time      `json:"verified_at,omitempty"`
 	StripeAccountId  *string         `json:"-"`
 	StripeCustomerId *string         `json:"-"`
 	Metadata         *types.Metadata `gorm:"type:jsonb"`
+	LastActive       *time.Time      `json:"last_active,omitempty"`
 
 	Bookings      []Booking            `gorm:"foreignKey:user_id" json:"bookings,omitempty"`
 	Organizations []Organization       `gorm:"foreignKey:owner_id" json:"organizations,omitempty"`
@@ -41,7 +43,13 @@ func (u *User) AfterCreate(tx *gorm.DB) error {
 		},
 	})
 	if seq != nil {
-
+		for cus, err := range seq {
+			if err != nil {
+				log.Printf("Error retrieving customer information: %s\n", err.Error())
+				continue
+			}
+			log.Printf("Customer: %s (%s)\n", cus.Email, cus.ID)
+		}
 	}
 	return nil
 }

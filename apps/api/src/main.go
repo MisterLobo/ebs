@@ -30,6 +30,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 	"github.com/tidwall/gjson"
@@ -176,7 +177,8 @@ func main() {
 		ctx.JSON(http.StatusOK, "ok")
 	})
 
-	guest := router.Group("/")
+	apiv1 := router.Group("/api/v1")
+	guest := apiv1.Group("/auth")
 	guest.
 		POST("/login", func(ctx *gin.Context) {
 			var body types.RegisterUserRequestBody
@@ -209,7 +211,15 @@ func main() {
 				ctx.JSON(http.StatusNotFound, gin.H{"error": "No user account is associated with this email"})
 				return
 			}
-			log.Println("id:", muser.ID, muser.Email, muser.UID)
+
+			if err = db.
+				Model(&models.User{}).
+				Where("id", muser.ID).
+				Update("last_active", time.Now()).
+				Error; err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
 
 			token, _ := generateJWT(user.Email, muser.ID, muser.ActiveOrg)
 			tokens = append(tokens, token)
@@ -290,7 +300,7 @@ func main() {
 			ctx.JSON(http.StatusOK, gin.H{"uid": user.UID})
 		})
 
-	router.POST("/webhook/stripe", func(ctx *gin.Context) {
+	apiv1.POST("/webhook/stripe", func(ctx *gin.Context) {
 		payload := make([]byte, 65536)
 		payload, err := io.ReadAll(ctx.Request.Body)
 		if err != nil {
@@ -333,6 +343,7 @@ func main() {
 			log.Printf("[PaymentIntent] ID: %s %s\n", pi.ID, pi.Status)
 			md := pi.Metadata
 			log.Printf("[%s] Metadata: %v\n", pi.ID, md)
+			requestId := md["requestId"]
 			b := md["bookingId"]
 			atoi, err := strconv.Atoi(b)
 			if err != nil {
@@ -357,11 +368,13 @@ func main() {
 						return err
 					}
 					err = tx.
-						Where(&models.Transaction{BookingID: bookingId, Status: types.TRANSACTION_PENDING}).
+						Where(&models.Transaction{ReferenceID: requestId, Status: types.TRANSACTION_PENDING}).
 						Updates(&models.Transaction{
 							SourceName:  "PaymentIntent",
 							SourceValue: pi.ID,
 							Status:      types.TRANSACTION_PROCESSING,
+							Amount:      float64(pi.Amount),
+							Currency:    string(pi.Currency),
 						}).
 						Error
 					if err != nil {
@@ -424,7 +437,7 @@ func main() {
 							Error
 					}
 					err = tx.
-						Where(&models.Transaction{BookingID: bookingId, Status: types.TRANSACTION_PROCESSING}).
+						Where(&models.Transaction{ReferenceID: requestId, Status: types.TRANSACTION_PROCESSING}).
 						Updates(&models.Transaction{
 							Status: types.TRANSACTION_COMPLETED,
 						}).
@@ -482,9 +495,27 @@ func main() {
 		ctx.Status(http.StatusNoContent)
 	})
 
-	authorized := router.Group("/")
+	authorized := router.Group("/api/v1")
 	authorized.Use(middlewares.AuthMiddleware)
 	{
+		authorized.
+			POST("/auth/logout", func(ctx *gin.Context) {
+				db := db.GetDb()
+				if err := db.Transaction(func(tx *gorm.DB) error {
+					userId := ctx.GetUint("id")
+					err := tx.Model(&models.User{}).Where(userId).Update("last_active", time.Now()).Error
+					if err != nil {
+						return err
+					}
+					return nil
+				}); err != nil {
+					log.Printf("Error on user logout: %s\n", err.Error())
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				ctx.Status(http.StatusOK)
+			})
+
 		authorized.
 			POST("/users", func(ctx *gin.Context) {}).
 			GET("/users/:id", func(ctx *gin.Context) {
@@ -596,6 +627,44 @@ func main() {
 				if err != nil {
 					log.Printf("Error update cache: %s\n", err.Error())
 					ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Something went wrong"})
+					return
+				}
+				sc := lib.GetStripeClient()
+				accountId := org.StripeAccountID
+				if accountId == nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": "Account not found"})
+					return
+				}
+				log.Println("AccountID:", org.ID, *accountId)
+				stripeAccount, err := sc.V1Accounts.GetByID(context.Background(), *accountId, nil)
+				if err != nil {
+					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+					return
+				}
+				completed := stripeAccount != nil && len(stripeAccount.Requirements.Errors) == 0 &&
+					stripeAccount.ChargesEnabled &&
+					stripeAccount.PayoutsEnabled &&
+					stripeAccount.DetailsSubmitted
+
+				onboarding_status := "incomplete"
+				if completed {
+					onboarding_status = "complete"
+				}
+				onboardingStatus := map[string]any{
+					"url":              org.ConnectOnboardingURL,
+					"accountId":        stripeAccount.ID,
+					"status":           onboarding_status,
+					"errors":           stripeAccount.Requirements.Errors,
+					"chargesEnabled":   stripeAccount.ChargesEnabled,
+					"payoutsEnabled":   stripeAccount.PayoutsEnabled,
+					"detailsSubmitted": stripeAccount.DetailsSubmitted,
+				}
+				jbytes, _ := json.Marshal(&onboardingStatus)
+				value := string(jbytes)
+				key := fmt.Sprintf("%d:onboarding_status", userId)
+				_, err = rd.JSONSet(context.Background(), key, "$", value).Result()
+				if err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
 				ctx.SetCookie("token", tokenCookie, 3600, "/", os.Getenv("APP_HOST"), false, true)
@@ -913,6 +982,26 @@ func main() {
 				}
 				orgId := uint(atoi)
 				userId := ctx.GetUint("id")
+				key := fmt.Sprintf("%d:onboarding_status", userId)
+				rd := lib.GetRedisClient()
+				val, err := rd.JSONGet(context.Background(), key).Result()
+				if err != nil {
+					if !errors.Is(err, redis.Nil) {
+						log.Printf("Could not read value from cache: %s\n", err.Error())
+						ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+						return
+					}
+				}
+				if gjson.Valid(val) {
+					var raw map[string]any
+					json.Unmarshal([]byte(val), &raw)
+					accountId := raw["accountId"].(string)
+					onboardingUrl := raw["url"].(string)
+					status := gjson.Get(val, "status").String()
+					ctx.JSON(http.StatusOK, gin.H{"completed": status == "complete", "account_id": accountId, "url": onboardingUrl, "data": raw})
+					return
+				}
+
 				db := db.GetDb()
 				var org models.Organization
 				ss := db.Session(&gorm.Session{PrepareStmt: true})
@@ -938,7 +1027,28 @@ func main() {
 					stripeAccount.ChargesEnabled &&
 					stripeAccount.PayoutsEnabled &&
 					stripeAccount.DetailsSubmitted
-				ctx.JSON(http.StatusOK, gin.H{"account_id": stripeAccount.ID, "url": org.ConnectOnboardingURL, "completed": completed})
+
+				onboarding_status := "incomplete"
+				if completed {
+					onboarding_status = "complete"
+				}
+				onboardingStatus := map[string]any{
+					"url":              org.ConnectOnboardingURL,
+					"accountId":        stripeAccount.ID,
+					"status":           onboarding_status,
+					"errors":           stripeAccount.Requirements.Errors,
+					"chargesEnabled":   stripeAccount.ChargesEnabled,
+					"payoutsEnabled":   stripeAccount.PayoutsEnabled,
+					"detailsSubmitted": stripeAccount.DetailsSubmitted,
+				}
+				jbytes, _ := json.Marshal(&onboardingStatus)
+				value := string(jbytes)
+				_, err = rd.JSONSet(context.Background(), key, "$", value).Result()
+				if err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				ctx.JSON(http.StatusOK, gin.H{"account_id": stripeAccount.ID, "url": org.ConnectOnboardingURL, "completed": completed, "data": onboardingStatus})
 			}).
 			GET("/organizations/check", func(ctx *gin.Context) {
 				orgId := ctx.GetUint("org")
@@ -1566,11 +1676,32 @@ func main() {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
+
+				keyEnv := os.Getenv("API_QRC_SECRET")
+				key, err := hex.DecodeString(keyEnv)
+				if err != nil {
+					log.Printf("Could not read data from string: %s\n", err.Error())
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+
+				message, err := utils.DecryptMessage(key, body.Code)
+				if err != nil {
+					log.Printf("Error decrypting message: %s\n", err.Error())
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				var rawData map[string]any
+				json.Unmarshal([]byte(*message), &rawData)
+				resIdKey := rawData["reservationId"].(float64)
+				reservationId := uint(resIdKey)
+				// ticketId := rawData["ticketIdKey"].(uint)
+
 				db := db.GetDb()
 				err = db.Transaction(func(tx *gorm.DB) error {
 					var reservation models.Reservation
 					err := tx.
-						Where(&models.Reservation{ID: body.ReservationID}).
+						Where(&models.Reservation{ID: reservationId}).
 						Preload("Ticket").
 						Preload("Booking").
 						Preload("Booking.Event").
@@ -1582,12 +1713,12 @@ func main() {
 						return errors.New("Window for admission has expired")
 					}
 					admission := models.Admission{
-						ReservationID: body.ReservationID,
+						ReservationID: reservationId,
 						Type:          "single",
 						Status:        "completed",
 					}
 					err = tx.
-						Where(models.Admission{ReservationID: body.ReservationID}).
+						Where(models.Admission{ReservationID: reservationId}).
 						FirstOrInit(&admission).
 						Error
 					if err != nil {
@@ -1603,7 +1734,7 @@ func main() {
 					return nil
 				})
 				if err != nil {
-					err := errors.New("Failed to claim reservation")
+					err := fmt.Errorf("Failed to claim reservation: %s\n", err.Error())
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
@@ -1691,6 +1822,7 @@ func main() {
 				db := db.GetDb()
 				err = db.
 					Model(&models.Booking{}).
+					Preload("Event").
 					Where(&models.Booking{ID: params.ID, CheckoutSessionId: &id}).
 					First(&booking).
 					Error
@@ -1704,8 +1836,22 @@ func main() {
 					ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 					return
 				}
+				var org models.Organization
+				err = db.
+					Model(&models.Organization{}).
+					Where("id", booking.Event.OrganizerID).
+					First(&org).
+					Error
+				if err != nil {
+					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+					return
+				}
 				cs := lib.GetStripeClient()
-				data, err := cs.V1CheckoutSessions.Retrieve(context.Background(), id, nil)
+				data, err := cs.V1CheckoutSessions.Retrieve(context.Background(), id, &stripe.CheckoutSessionRetrieveParams{
+					Params: stripe.Params{
+						StripeAccount: org.StripeAccountID,
+					},
+				})
 				if err != nil {
 					log.Printf("[Stripe] Unable to retrieve information: %s\n", err.Error())
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": "Unable to retrieve information"})

@@ -22,6 +22,7 @@ require (
 	github.com/redis/go-redis/v9 v9.8.0
 	github.com/stripe/stripe-go/v82 v82.1.0
 	github.com/tidwall/gjson v1.18.0
+	github.com/wneessen/go-mail v0.6.2
 	github.com/yeqown/go-qrcode v1.5.10
 	google.golang.org/api v0.233.0
 	gorm.io/driver/postgres v1.5.11

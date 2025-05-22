@@ -44,7 +44,7 @@ export async function createOrganization(data: NewOrganizationRequestPayload) {
   return { id, error }
 }
 
-export async function organizationOnboarding(id: number) {
+export async function organizationOnboarding(id: number): Promise<{ completed?: boolean, account_id?: number, url?: string, error?: string, data?: Record<string, any> }> {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
   const response = await fetch(`${process.env.API_HOST}/organizations/${id}/onboarding`, {
@@ -52,10 +52,10 @@ export async function organizationOnboarding(id: number) {
       'Authorization': `Bearer ${token}`,
     },
   })
-  const { completed, account_id, url, error } = await response.json()
+  const { completed, account_id, url, error, data } = await response.json()
   console.log('[status]:', completed, url)
   
-  return { completed, account_id, url, error }
+  return { completed, account_id, url, error, data }
 }
 
 export async function organizationOnboardingBegin(id: number) {
@@ -167,10 +167,12 @@ export async function getEvents(orgId?: number, filters?: EventQueryFilters) {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
   const searchParams = new URLSearchParams(filters)
-  let requestUrl = new URL(`/events?${searchParams.toString()}`, process.env.API_HOST)
+  let requestUrl = new URL(`${process.env.API_HOST}/events?${searchParams.toString()}`)
   if (orgId) {
-    requestUrl = new URL(`/organizations/${orgId}/events?${searchParams.toString()}`, process.env.API_HOST)
+    requestUrl = new URL(`${process.env.API_HOST}/organizations/${orgId}/events?${searchParams.toString()}`)
   }
+  console.log('[url]:', requestUrl.toString());
+  
   const response = await fetch(requestUrl, {
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -263,7 +265,7 @@ export async function getTickets(id: number, orgId?: number) {
 export async function getTicket(id: number) {}
 
 export async function registerUser(email: string) {
-  const response = await fetch(`${process.env.API_HOST}/register`, {
+  const response = await fetch(`${process.env.API_HOST}/auth/register`, {
     method: 'POST',
     body: JSON.stringify({
       email,
@@ -277,7 +279,7 @@ export async function registerUser(email: string) {
 }
 
 export async function loginUser(email: string) {
-  const response = await fetch(`${process.env.API_HOST}/login`, {
+  const response = await fetch(`${process.env.API_HOST}/auth/login`, {
     method: 'POST',
     body: JSON.stringify({
       email,
@@ -431,6 +433,14 @@ export async function downloadTicket(id: number, resId: number) {
 
 export async function logout() {
   const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/auth/logout`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'POST',
+  })
+  console.log('[logout]:', response.status)
   if ($cookies.has('token')) {
     $cookies.delete('token')
   }

@@ -483,7 +483,7 @@ func DeleteTicket(id uint) error {
 	return err
 }
 
-func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csURL string, csID *string, requestId *uuid.UUID) (*uint, []uint, error) {
+func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csURL string, csID *string, requestId *uuid.UUID) ([]uint, error) {
 	metadata := types.JSONB{
 		"requestId": requestId.String(),
 	}
@@ -492,7 +492,6 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 	errors := make([]string, 0)
 	now := time.Now()
 	expirationTime := now.Add(1 * time.Hour)
-	var bookingId uint
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, v := range params.Items {
 			var ticket models.Ticket
@@ -544,13 +543,7 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				log.Println(err.Error())
 				return err
 			}
-			bookingId = r.ID
-
-			txn := models.Transaction{
-				BookingID: bookingId,
-				Status:    types.TRANSACTION_PENDING,
-			}
-			err = tx.Create(&txn).Error
+			bookingId := r.ID
 
 			reservationIDs = append(reservationIDs, r.ID)
 			runsAt := expirationTime
@@ -607,14 +600,23 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				return err
 			}
 		}
+		txn := models.Transaction{
+			Status:      types.TRANSACTION_PENDING,
+			ReferenceID: requestId.String(),
+		}
+		err := tx.Create(&txn).Error
+		if err != nil {
+			return err
+		}
+
 		return nil
 	})
 	if err != nil {
 		log.Printf("CreateReservation failed: %s\n", err.Error())
-		return &bookingId, []uint{}, err
+		return []uint{}, err
 	}
 
-	return &bookingId, reservationIDs, nil
+	return reservationIDs, nil
 }
 
 func GetOrgReservations(id uint) ([]models.Booking, error) {

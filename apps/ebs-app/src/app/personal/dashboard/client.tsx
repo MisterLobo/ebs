@@ -50,6 +50,7 @@ function ReservationCard({ data }: { data: Booking }) {
       toast('NOTICE', {
         description: 'Cancelation has been requested',
       })
+      router.refresh()
     }
     router.refresh()
   }, [data.id])

@@ -1,7 +1,7 @@
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { getActiveOrganization, getEventById, getTickets } from '@/lib/actions'
+import { getActiveOrganization, getEventById, getTickets, organizationOnboarding } from '@/lib/actions'
 import { EventPageHeaderActions } from './components/actions'
 import { importURLPatternPolyfill } from '@/lib/utils'
 import { headers } from 'next/headers'
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import TicketCard from './components/ticket-card'
 import { format } from 'date-fns'
 import { notFound } from 'next/navigation'
+import { OnboardingIncomplete } from '../../components/notice'
 
 export default async function EventPage() {
   await importURLPatternPolyfill()
@@ -25,6 +26,7 @@ export default async function EventPage() {
     throw notFound()
   }
   const org = await getActiveOrganization()
+  const { completed } = await organizationOnboarding(org?.id as number)
   const ticketsData = await getTickets(eventId, org?.id)
 
   return (
@@ -55,6 +57,8 @@ export default async function EventPage() {
       {(eventData.status === 'notify' && eventData.opens_at) && <h2>Event reservation opens on { format(new Date(eventData.opens_at), 'PPPP, p') }</h2>}
     </div>
     <EventPageHeaderActions event={eventData} />
+    {completed ?
+    <>
     {ticketsData.length > 0 ?
     <div className="mx-auto min-w-96 flex flex-row">
       {ticketsData.map(ticket => (
@@ -62,6 +66,9 @@ export default async function EventPage() {
       ))}
     </div> :
     <p className="text-center italic text-gray-400">This event does not have any tickets. Create one to display here</p>
+    }
+    </> :
+    <OnboardingIncomplete />
     }
     </>
   )

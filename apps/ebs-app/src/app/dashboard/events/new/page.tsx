@@ -1,7 +1,7 @@
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import NewEventForm from "./components/forms";
-import { Separator } from "@/components/ui/separator";
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { SidebarTrigger } from '@/components/ui/sidebar'
+import NewEventForm from './components/forms'
+import { Separator } from '@/components/ui/separator'
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 
 export default async function NewEventPage() {
   return (

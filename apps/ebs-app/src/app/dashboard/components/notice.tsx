@@ -2,7 +2,10 @@
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 import { AlertTriangle } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 export function OnboardingNotice({ url }: { url?: string }) {
   const continueOnboarding = () => {
@@ -21,5 +24,32 @@ export function OnboardingNotice({ url }: { url?: string }) {
         </div>
       </AlertDescription>
     </Alert>
+  )
+}
+
+export function OnboardingIncomplete() {
+  const router = useRouter()
+  const continueOnboarding = () => {
+    router.push('/dashboard/setup')
+  }
+  return (
+    <div className="container flex items-center justify-center">
+      <div className="flex flex-col mt-20 size-96 items-center justify-center">
+        <Card className="w-full h-full">
+          <CardHeader>
+            <CardTitle>NOTICE</CardTitle>
+          </CardHeader>
+          <Separator />
+          <CardContent className="h-full space-y-2">
+            <p>Finish setting up to continue</p>
+            <p>Billing information is required to start selling tickets</p>
+            <Separator />
+          </CardContent>
+          <CardAction className="w-full px-4">
+            <Button className="w-full cursor-pointer" onClick={continueOnboarding}>Continue</Button>
+          </CardAction>
+        </Card>
+      </div>
+    </div>
   )
 }

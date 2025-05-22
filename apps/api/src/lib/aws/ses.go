@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"log"
-	"os"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
@@ -20,14 +19,17 @@ func GetSESClient() *ses.Client {
 	return svc
 }
 
-func SESSendMessage() {
+func SESSendMessage(from *string, destination *types.Destination, message *types.Message) {
 	c := GetSESClient()
 	input := &ses.SendEmailInput{
-		Destination: &types.Destination{
-			ToAddresses: []string{
-				os.Getenv("SNS_EMAIL"),
-			},
-		},
+		Destination: destination,
+		Source:      from,
+		Message:     message,
 	}
-	c.SendEmail(context.TODO(), input)
+	out, err := c.SendEmail(context.TODO(), input)
+	if err != nil {
+		log.Printf("Error sending email: %s\n", err.Error())
+		return
+	}
+	log.Printf("Sent email with id: %s\n", *out.MessageId)
 }

@@ -9,16 +9,15 @@ import (
 type Transaction struct {
 	ID uuid.UUID `gorm:"primarykey;type:uuid;default:gen_random_uuid()" json:"id"`
 
-	BookingID   uint
-	Currency    string
-	Amount      float64
-	SourceName  string
-	SourceValue string
-	ReferenceID string
-	Status      types.TransactionStatus `gorm:"pending"`
-	Metadata    types.JSONB
+	Currency          string                  `json:"currency,omitempty"`
+	Amount            float64                 `json:"amount,omitempty"`
+	SourceName        string                  `json:"source_name,omitempty"`
+	SourceValue       string                  `json:"source_value,omitempty"`
+	ReferenceID       string                  `json:"reference_id,omitempty"`
+	Status            types.TransactionStatus `gorm:"pending" json:"status,omitempty"`
+	Metadata          types.JSONB             `json:"metadata,omitempty"`
+	CheckoutSessionId *string                 `json:"checkout_session_id,omitempty"`
+	PaymentIntentId   *string                 `json:"payment_intent_id,omitempty"`
 
 	types.Timestamps
-
-	Booking Booking `gorm:"foreignKey:booking_id" json:"-"`
 }

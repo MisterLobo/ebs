@@ -60,6 +60,10 @@ const data = {
       isActive: true,
       items: [
         {
+          title: 'Onboarding',
+          url: '/dashboard/setup',
+        },
+        {
           title: 'Overview',
           url: '/dashboard',
         },

@@ -21,12 +21,12 @@ func GetS3Client() *s3.Client {
 	return svc
 }
 
-func S3UploadAsset(name string, f string) error {
+func S3UploadAsset(name string, f string) (*string, error) {
 	assetsBucket := os.Getenv("S3_ASSETS_BUCKET")
 	file, err := os.Open(f)
 	if err != nil {
 		log.Printf("Could not open file to upload: %s\n", err.Error())
-		return err
+		return nil, err
 	}
 	defer file.Close()
 	client := GetS3Client()
@@ -38,7 +38,7 @@ func S3UploadAsset(name string, f string) error {
 	})
 	if err != nil {
 		log.Printf("Could not put object to S3 bucket: %s\n", err.Error())
-		return err
+		return nil, err
 	}
 	err = s3.NewObjectExistsWaiter(client).Wait(context.Background(), &s3.HeadObjectInput{
 		Bucket: aws.String(assetsBucket),
@@ -46,8 +46,19 @@ func S3UploadAsset(name string, f string) error {
 	}, time.Minute)
 	if err != nil {
 		log.Printf("Failed attempt to wait for object %s to exist: %s\n", name, err.Error())
-		return err
+		return nil, err
 	}
 	log.Printf("Added object '%s' to bucket '%s'", name, assetsBucket)
-	return nil
+	pre := s3.NewPresignClient(client)
+	r, err := pre.PresignGetObject(context.TODO(), &s3.GetObjectInput{
+		Bucket: aws.String(assetsBucket),
+		Key:    aws.String(name),
+	}, func(po *s3.PresignOptions) {
+		po.Expires = time.Duration(3600 * time.Second)
+	})
+	if err != nil {
+		log.Printf("Could not generate presigned URL for object [%s]: %s\n", name, err.Error())
+		return nil, err
+	}
+	return &r.URL, nil
 }

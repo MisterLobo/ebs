@@ -344,27 +344,18 @@ func main() {
 			md := pi.Metadata
 			log.Printf("[%s] Metadata: %v\n", pi.ID, md)
 			requestId := md["requestId"]
-			b := md["bookingId"]
-			atoi, err := strconv.Atoi(b)
-			if err != nil {
-				log.Printf("[%s] Error reading Metadata: %s\n", pi.ID, err.Error())
-				break
-			}
-			bookingId := uint(atoi)
 			go func() {
-				var booking models.Booking
 				db := db.GetDb()
 				err := db.Transaction(func(tx *gorm.DB) error {
-					err := tx.Where(&models.Booking{ID: bookingId}).First(&booking).Error
+					err = tx.
+						Model(&models.Booking{}).
+						Where("metadata ->> 'requestId' = ?", requestId).
+						Updates(&models.Booking{
+							Status:          string(types.BOOKING_COMPLETED),
+							PaymentIntentId: &pi.ID,
+						}).Error
 					if err != nil {
-						return err
-					}
-					err = tx.Where(&models.Booking{ID: bookingId}).Updates(&models.Booking{
-						Status:          string(types.BOOKING_COMPLETED),
-						PaymentIntentId: &pi.ID,
-					}).Error
-					if err != nil {
-						log.Printf("Error updating Booking record [%d]: %s\n", bookingId, err.Error())
+						log.Printf("Error updating Booking group [%s]: %s\n", requestId, err.Error())
 						return err
 					}
 					err = tx.
@@ -399,18 +390,16 @@ func main() {
 			md := pi.Metadata
 			log.Printf("[%s] Metadata: %v\n", pi.ID, md)
 			requestId := md["requestId"]
-			b := md["bookingId"]
-			atoi, err := strconv.Atoi(b)
-			if err != nil {
-				log.Printf("[%s] Error reading Metadata: %s\n", pi.ID, err.Error())
-				break
-			}
-			bookingId := uint(atoi)
 			go func() {
 				var bookings []models.Booking
 				db := db.GetDb()
 				err := db.Transaction(func(tx *gorm.DB) error {
-					err := tx.Where("metadata ->> 'requestId' = ?", requestId).Pluck("id", &bookings).Error
+					err := tx.
+						Model(&models.Booking{}).
+						Where("metadata ->> 'requestId' = ?", requestId).
+						Preload("Event").
+						Find(&bookings).
+						Error
 					if err != nil {
 						return err
 					}
@@ -422,19 +411,22 @@ func main() {
 							PaymentIntentId: &pi.ID,
 						}).Error
 					if err != nil {
-						log.Printf("Error updating Booking record [%d]: %s\n", bookingId, err.Error())
+						log.Printf("Error updating Booking group [%s]: %s\n", requestId, err.Error())
 						return err
 					}
 					for _, booking := range bookings {
-						err = tx.
+						err := tx.
 							Model(&models.Reservation{}).
-							Where("booking_id", booking.ID).
-							Preload("Event").
+							Where("booking_id = ?", booking.ID).
+							Preload("Booking").
 							Updates(&models.Reservation{
 								Status:     string(types.RESERVATION_COMPLETED),
 								ValidUntil: booking.Event.DateTime,
 							}).
 							Error
+						if err != nil {
+							return err
+						}
 					}
 					err = tx.
 						Where(&models.Transaction{ReferenceID: requestId, Status: types.TRANSACTION_PROCESSING}).

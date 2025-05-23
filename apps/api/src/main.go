@@ -9,6 +9,7 @@ import (
 	"ebs/src/config"
 	"ebs/src/db"
 	"ebs/src/lib"
+	"ebs/src/lib/aws"
 	"ebs/src/middlewares"
 	"ebs/src/models"
 	"ebs/src/types"
@@ -21,6 +22,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"time"
 
@@ -1361,7 +1363,10 @@ func main() {
 				filename := fmt.Sprintf("ticketcode_%d-%d", ticketId, params.ReservationID)
 				err := db.Transaction(func(tx *gorm.DB) error {
 					var ticket models.Ticket
-					if err := tx.Where(&models.Ticket{ID: ticketId}).First(&ticket).Error; err != nil {
+					if err := tx.
+						Where(&models.Ticket{ID: ticketId}).
+						First(&ticket).
+						Error; err != nil {
 						return err
 					}
 					var reservation models.Reservation
@@ -1407,13 +1412,23 @@ func main() {
 					if err != nil {
 						return err
 					}
-					cwd, err := os.Getwd()
+					wd, err := os.Getwd()
 					if err != nil {
+						log.Printf("Could not read working directory: %s\n", err.Error())
 						return err
 					}
-					filepath = fmt.Sprintf("%s/../assets/%s.jpeg", cwd, filename)
+					tempdir := os.Getenv("TEMP_DIR")
+					filepath = path.Join(wd, "..", tempdir, fmt.Sprintf("%s.jpeg", filename))
 					if err = qrc.Save(filepath); err != nil {
+						log.Printf("Could not save qrcode to file [%s]: %s\n", filepath, err.Error())
 						return err
+					}
+					appEnv := os.Getenv("APP_ENV")
+					if appEnv == "test" || appEnv == "prod" {
+						if err := aws.S3UploadAsset(filename, filepath); err != nil {
+							log.Printf("Error uploading asset to S3 bucket: %s\n", err.Error())
+							return err
+						}
 					}
 					return nil
 				})

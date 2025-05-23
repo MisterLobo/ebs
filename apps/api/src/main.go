@@ -1361,6 +1361,7 @@ func main() {
 				db := db.GetDb()
 				var filepath string
 				filename := fmt.Sprintf("ticketcode_%d-%d", ticketId, params.ReservationID)
+				var signedURL string
 				err := db.Transaction(func(tx *gorm.DB) error {
 					var ticket models.Ticket
 					if err := tx.
@@ -1425,10 +1426,13 @@ func main() {
 					}
 					appEnv := os.Getenv("APP_ENV")
 					if appEnv == "test" || appEnv == "prod" {
-						if err := aws.S3UploadAsset(filename, filepath); err != nil {
+						url, err := aws.S3UploadAsset(filename, filepath)
+						if err != nil {
 							log.Printf("Error uploading asset to S3 bucket: %s\n", err.Error())
 							return err
 						}
+						log.Printf("Signed URL: %s\n", *url)
+						signedURL = *url
 					}
 					return nil
 				})
@@ -1436,7 +1440,7 @@ func main() {
 					ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 					return
 				}
-				ctx.FileAttachment(filepath, "ticket.jpeg")
+				ctx.FileAttachment(signedURL, "ticket.jpeg")
 			}).
 			GET("/tickets/:id/reservations", func(ctx *gin.Context) {
 				var params types.TicketReservationsURIParams

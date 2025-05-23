@@ -467,7 +467,7 @@ func main() {
 			go func() {
 				db := db.GetDb()
 				err := db.Transaction(func(tx *gorm.DB) error {
-					err = tx.
+					err := tx.
 						Model(&models.Booking{}).
 						Where("metadata ->> 'requestId' = ?", requestId).
 						Updates(&models.Booking{
@@ -481,12 +481,6 @@ func main() {
 				})
 				if err != nil {
 					log.Printf("Error updating Booking records: %s\n", err.Error())
-					return
-				}
-				sc := lib.GetStripeClient()
-				out, err := sc.V1CheckoutSessions.Expire(context.Background(), cs.ID, nil)
-				if err != nil {
-					log.Printf("Error expiring CheckoutSession [%s]: %s\n", out.ID, err.Error())
 					return
 				}
 			}()
@@ -631,12 +625,14 @@ func main() {
 				}
 				sc := lib.GetStripeClient()
 				accountId := org.StripeAccountID
-				if accountId == nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": "Account not found"})
+				accId := *accountId
+				if accountId == nil || accId == "" {
+					log.Printf("Error while retrieving account information for Organization [%d]: account is not set up\n", orgId)
+					ctx.JSON(http.StatusNotFound, gin.H{"error": "Account not found"})
 					return
 				}
-				log.Println("AccountID:", org.ID, *accountId)
-				stripeAccount, err := sc.V1Accounts.GetByID(context.Background(), *accountId, nil)
+				log.Println("AccountID:", org.ID, accId)
+				stripeAccount, err := sc.V1Accounts.GetByID(context.Background(), accId, nil)
 				if err != nil {
 					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return
@@ -1118,21 +1114,12 @@ func main() {
 		authorized.
 			GET("/events", func(ctx *gin.Context) {
 				var events []models.Event
-				userId := ctx.GetUint("id")
 				db := db.GetDb()
 				err := db.Transaction(func(tx *gorm.DB) error {
 					today := time.Now()
-					var subscriptions []any
-					err := tx.
-						Model(&models.EventSubscription{}).
-						Where(&models.EventSubscription{SubscriberID: userId}).
-						Pluck("event_id", &subscriptions).Error
-					if err != nil {
-						return err
-					}
 					in1h := today.Add(1 * time.Minute)
 					in3months := today.Add((24 * 30 * 3) * time.Hour)
-					err = tx.
+					err := tx.
 						Where(tx.
 							Where("status", "open").
 							Where("date_time BETWEEN ? AND ?", in1h, in3months),
@@ -1141,7 +1128,6 @@ func main() {
 							Where(&models.Event{Status: "notify"}).
 							Where("opens_at BETWEEN ? AND ?", in1h, in3months),
 						).
-						Where(tx.Not(clause.IN{Column: "id", Values: subscriptions})).
 						Order("date_time asc").
 						Limit(20).
 						Find(&events).
@@ -1786,9 +1772,11 @@ func main() {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
+				orgId := ctx.GetUint("org")
 				userId := ctx.GetUint("id")
 				requestID := uuid.New()
 				url, csid, err := utils.CreateStripeCheckout(&body, map[string]string{
+					"orgId":     fmt.Sprint(orgId),
 					"requestId": requestID.String(),
 					"userId":    fmt.Sprint(userId),
 				})

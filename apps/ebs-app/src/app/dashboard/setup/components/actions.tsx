@@ -7,7 +7,6 @@ export function SetupActions({ onboardingUrl }: { onboardingUrl?: string }) {
     if (!onboardingUrl) {
       return
     }
-    alert(onboardingUrl)
     window.open(onboardingUrl, '_blank')
   }
   return (

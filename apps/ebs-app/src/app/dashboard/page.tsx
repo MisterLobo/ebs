@@ -16,9 +16,8 @@ import {
 
 import data from './data.json'
 import { ChartBarInteractive } from '@/components/chart-bar-interactive'
-import { getActiveOrganization, organizationOnboarding } from '@/lib/actions'
+import { getActiveOrganization } from '@/lib/actions'
 import { notFound, redirect } from 'next/navigation'
-import { OnboardingNotice } from './components/notice'
 
 export default async function Page() {
   const org = await getActiveOrganization()
@@ -28,14 +27,8 @@ export default async function Page() {
   if (org.type === 'personal') {
     redirect('/setup/organizations/create')
   }
-  const { completed, url } = await organizationOnboarding(org?.id ?? 0)
   return (
     <>
-    {!completed &&
-    <div className="flex w-full items-center justify-center">
-      <OnboardingNotice url={url} />
-    </div>
-    }
     <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
       <div className="flex items-center gap-2 px-4">
         <SidebarTrigger className="-ml-1" />

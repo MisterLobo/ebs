@@ -33,7 +33,10 @@ const formSchema = z.object({
   opens_at_time: z.coerce.string().optional(),
 })
 
-export default function NewEventForm() {
+type Props = {
+  onboardingComplete?: boolean;
+}
+export default function NewEventForm({ onboardingComplete }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [scheduled, setScheduled] = useState(false)
@@ -326,7 +329,7 @@ export default function NewEventForm() {
               <FormLabel>Scheduled opening</FormLabel>
               <FormControl>
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="opensAt" checked={value} onCheckedChange={e => {
+                  <Checkbox id="opensAt" checked={value} disabled={!onboardingComplete} onCheckedChange={e => {
                     onChange(e)
                     setScheduled(e as boolean)
                   }} />
@@ -385,7 +388,7 @@ export default function NewEventForm() {
         <Separator />
         <div className="flex items-center gap-2">
           <Button type="submit" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" disabled={!form.formState.isValid || busy}>CREATE</Button>
-          <Button type="button" variant="secondary" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={createAndPublish} disabled={!form.formState.isValid || scheduled || busy}>CREATE AND PUBLISH</Button>
+          <Button type="button" variant="secondary" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={createAndPublish} disabled={!onboardingComplete || !form.formState.isValid || scheduled || busy}>CREATE AND PUBLISH</Button>
         </div>
       </form>
     </Form>

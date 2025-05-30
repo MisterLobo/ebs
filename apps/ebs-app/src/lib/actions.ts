@@ -11,6 +11,8 @@ export async function getActiveOrganization(): Promise<Organization | undefined>
   const response = await fetch(`${process.env.API_HOST}/organizations/active`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 401) {
@@ -34,6 +36,8 @@ export async function createOrganization(data: NewOrganizationRequestPayload) {
   const response = await fetch(`${process.env.API_HOST}/organizations`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify(data),
@@ -50,6 +54,8 @@ export async function organizationOnboarding(id: number): Promise<{ completed?: 
   const response = await fetch(`${process.env.API_HOST}/organizations/${id}/onboarding`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { completed, account_id, url, error, data } = await response.json()
@@ -64,6 +70,8 @@ export async function organizationOnboardingBegin(id: number) {
   const response = await fetch(`${process.env.API_HOST}/organizations/${id}/onboarding`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -79,6 +87,8 @@ export async function listOrganizations() {
   const response = await fetch(`${process.env.API_HOST}/organizations?type=standard&owned=true`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -94,6 +104,8 @@ export async function switchOrganization(id: number) {
   const response = await fetch(`${process.env.API_HOST}/organizations/${id}/switch`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -114,6 +126,8 @@ export async function isSharedOrganization(): Promise<boolean | undefined> {
   const response = await fetch(`${process.env.API_HOST}/organizations/check`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 401 && $cookies.has('token')) {
@@ -139,6 +153,8 @@ export async function createEvent(data: NewEventRequestPayload) {
   const response = await fetch(`${process.env.API_HOST}/events`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify(data),
@@ -155,6 +171,8 @@ export async function publishEvent(id: number) {
   const response = await fetch(`${process.env.API_HOST}/events/${id}/publish`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PATCH',
   })
@@ -169,6 +187,8 @@ export async function setEventStatus(id: number, new_status: string) {
   const response = await fetch(`${process.env.API_HOST}/events/${id}/status`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PATCH',
     body: JSON.stringify({
@@ -193,6 +213,8 @@ export async function getEvents(orgId?: number, filters?: EventQueryFilters) {
   const response = await fetch(requestUrl, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -211,6 +233,8 @@ export async function getEventById(id: number): Promise<Event | null> {
   const response = await fetch(`${process.env.API_HOST}/events/${id}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 401) {
@@ -231,6 +255,8 @@ export async function createTicket(data: NewTicketRequestPayload) {
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify(data),
@@ -247,6 +273,8 @@ export async function publishTicket(id: number) {
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/publish`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PATCH',
   })
@@ -265,6 +293,8 @@ export async function getTickets(id: number, orgId?: number) {
   const response = await fetch(requestUrl, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -283,6 +313,10 @@ export async function getTicket(id: number) {}
 
 export async function registerUser(email: string) {
   const response = await fetch(`${process.env.API_HOST}/auth/register`, {
+    headers: {
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
+    },
     method: 'POST',
     body: JSON.stringify({
       email,
@@ -297,6 +331,10 @@ export async function registerUser(email: string) {
 
 export async function loginUser(email: string) {
   const response = await fetch(`${process.env.API_HOST}/auth/login`, {
+    headers: {
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
+    },
     method: 'POST',
     body: JSON.stringify({
       email,
@@ -319,6 +357,8 @@ export async function createCheckoutSession(items: { qty: number, ticket: number
   const response = await fetch(`${process.env.API_HOST}/checkout`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify({
@@ -345,6 +385,8 @@ export async function resumeCheckoutSession(id: string, checkoutId: string) {
   const response = await fetch(`${process.env.API_HOST}/transactions/checkout`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify({
@@ -362,6 +404,8 @@ export async function cancelReservation(bookingId: number) {
   const response = await fetch(`${process.env.API_HOST}/bookings/${bookingId}/cancel`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PUT',
   })
@@ -387,6 +431,8 @@ export async function cancelTransaction({ id, bookings }: { id?: string, booking
   const response = await fetch(`${process.env.API_HOST}/bookings/cancel`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PUT',
     body: JSON.stringify(body),
@@ -408,6 +454,8 @@ export async function getReservations(org = false) {
   const response = await fetch(requestUrl, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, error } = await response.json()
@@ -421,6 +469,8 @@ export async function getBookingTickets(id: number) {
   const response = await fetch(`${process.env.API_HOST}/bookings/${id}/reservations`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, count, error } = await response.json()
@@ -434,6 +484,8 @@ export async function getTicketStats(id: number) {
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/seats`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { free, reserved, error } = await response.json()
@@ -447,6 +499,8 @@ export async function subscribeToEvent(eventId: number) {
   const response = await fetch(`${process.env.API_HOST}/events/${eventId}/subscribe`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -461,6 +515,8 @@ export async function getWaitlist() {
   const response = await fetch(`${process.env.API_HOST}/events/waitlist`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, count, error } = await response.json()
@@ -474,6 +530,8 @@ export async function downloadTicket(id: number, resId: number) {
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/download/${resId}/code`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -494,6 +552,7 @@ export async function logout() {
   const response = await fetch(`${process.env.API_HOST}/auth/logout`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -523,6 +582,8 @@ export async function getBookings(org: number): Promise<Booking[]> {
   const response = await fetch(`${process.env.API_HOST}/organizations/${org}/bookings`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -544,6 +605,8 @@ export async function getAdmissions(orgId: number): Promise<Admission[]> {
   const response = await fetch(`${process.env.API_HOST}/organizations/${orgId}/admissions`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -567,6 +630,8 @@ export async function getAdmission(id: number): Promise<Admission | null> {
   const response = await fetch(`${process.env.API_HOST}/admissions/${id}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -590,6 +655,8 @@ export async function getOrganizationTickets(org: number): Promise<Ticket[]> {
   const response = await fetch(`${process.env.API_HOST}/organizations/${org}/tickets`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -611,6 +678,8 @@ export async function getSoldTickets(org: number): Promise<any> {
   const response = await fetch(`${process.env.API_HOST}/organizations/${org}/tickets/sold`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -632,6 +701,8 @@ export async function getTransaction(id: number): Promise<Transaction | null> {
   const response = await fetch(`${process.env.API_HOST}/transactions/${id}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -660,6 +731,31 @@ export async function aboutOrganization({ id, slug }: { id?: number, slug?: stri
   const response = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return null
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return null
+  }
+
+  const { data } = await response.json()
+  return data
+}
+
+export async function getEventSubscription(id: number): Promise<number | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/events/${id}/subscription`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {

@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { getActiveOrganization, organizationOnboarding, publishEvent, setEventStatus } from '@/lib/actions'
 import { Event } from '@/lib/types'
-import { PlusIcon } from 'lucide-react'
+import { PlusIcon, Send } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -44,12 +44,6 @@ export function EventPageHeaderActions({ event }: Props) {
     router.refresh()
   }, [router, onboardingComplete, eventId])
 
-  const openReg = useCallback(async () => {
-    setBusy(true)
-    await setEventStatus(event?.id as number, 'registration')
-    setBusy(false)
-    router.refresh()
-  }, [])
   const openAdm = useCallback(async () => {
     setBusy(true)
     await setEventStatus(event?.id as number, 'admission')
@@ -69,8 +63,7 @@ export function EventPageHeaderActions({ event }: Props) {
         <PlusIcon />
         <span>NEW TICKET</span>
       </Button>
-      {['draft', 'notify'].includes(event?.status ?? '') && <Button type="button" className="cursor-pointer" onClick={publish} disabled={!onboardingComplete || loading || busy}>{ busy ? 'PUBLISHING' : 'PUBLISH' }</Button>}
-      {event?.status === 'notify' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={openReg}>OPEN REGISTRATION</Button>}
+      {['draft', 'notify'].includes(event?.status ?? '') && <Button type="button" className="cursor-pointer" onClick={publish} disabled={!onboardingComplete || loading || busy}><Send />{ busy ? 'PUBLISHING' : 'PUBLISH' }</Button>}
       {event?.status === 'registration' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={openAdm}>OPEN ADMISSION</Button>}{event?.status === 'admission' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={closeAdm}>CLOSE ADMISSION</Button>}
     </div>
   )

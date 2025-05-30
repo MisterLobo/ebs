@@ -17,10 +17,10 @@ export default async function SlugAboutPage() {
   return (
     <div className="container">
       <p className="text-3xl">About {about?.name}</p>
-      <p className="text-xs">{about?.email}</p>
-      <section>{about?.country}</section>
+      <p className="text-xs">Contact: {about?.email}</p>
+      <p className="text-xs">{about?.country}</p>
       {about?.verified && <p className="flex items-center gap-2"><CheckCircle /><span>Verified Account</span></p>}
-      <p className="flex items-center gap-2">Country: {about?.country ?? 'N/A'}</p>
+      <p className="flex items-center gap-2 text-xs">Country: {about?.country ?? 'N/A'}</p>
       {about?.payment_verified && <p className="flex items-center gap-2"><CheckCircle /><span>Payment Verified</span></p>}
       <p className="uppercase text-3xl my-4">Events ({events.length})</p>
       {events ?

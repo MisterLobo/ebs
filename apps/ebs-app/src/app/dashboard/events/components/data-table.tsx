@@ -296,7 +296,8 @@ export function DataTable({
     [data]
   )
 
-  const { notify, registration, admission, completed, canceled, expired } = React.useMemo(() => {
+  const { draft, notify, registration, admission, completed, canceled, expired } = React.useMemo(() => {
+    const draft = data.filter(v => v.status === 'draft')
     const notify = data.filter(v => v.status === 'notify')
     const registration = data.filter(v => v.status === 'registration')
     const admission = data.filter(v => v.status === 'admission')
@@ -304,6 +305,7 @@ export function DataTable({
     const canceled = data.filter(v => v.status === 'canceled')
     const expired = data.filter(v => v.status === 'expired')
     return {
+      draft,
       notify,
       registration,
       admission,
@@ -312,6 +314,31 @@ export function DataTable({
       expired,
     }
   }, [data])
+
+  const draftTable = useReactTable({
+    data: draft,
+    columns,
+    state: {
+      sorting,
+      columnVisibility,
+      rowSelection,
+      columnFilters,
+      pagination,
+    },
+    getRowId: (row) => row.id.toString(),
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
+  })
 
   const notifyTable = useReactTable({
     data: notify,
@@ -491,6 +518,7 @@ export function DataTable({
             <SelectValue placeholder="Select a view" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="events-draft">Draft</SelectItem>
             <SelectItem value="events-notify">Notify</SelectItem>
             <SelectItem value="events-registration">Registration</SelectItem>
             <SelectItem value="events-admission">Admission</SelectItem>
@@ -500,6 +528,14 @@ export function DataTable({
           </SelectContent>
         </Select>
         <TabsList className="@4xl/main:flex hidden">
+          <TabsTrigger value="events-draft">Draft{" "}
+            {draft.length > 0 && <Badge
+              variant="secondary"
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
+            >
+              {draft.length}
+            </Badge>}
+          </TabsTrigger>
           <TabsTrigger value="events-notify">Notify{" "}
             {notify.length > 0 && <Badge
               variant="secondary"
@@ -591,6 +627,139 @@ export function DataTable({
           </Button>
         </div>
       </div>
+      <TabsContent
+        value="events-draft"
+        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
+      >
+        <div className="overflow-hidden rounded-lg border">
+          <DndContext
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={handleDragEnd}
+            sensors={sensors}
+            id={sortableId}
+          >
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-muted">
+                {draftTable.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => {
+                      return (
+                        <TableHead key={header.id} colSpan={header.colSpan}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      )
+                    })}
+                  </TableRow>
+                ))}
+              </TableHeader>
+              <TableBody className="**:data-[slot=table-cell]:first:w-8">
+                {draftTable.getRowModel().rows?.length ? (
+                  <SortableContext
+                    items={dataIds}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {draftTable.getRowModel().rows.map((row) => (
+                      <DraggableRow key={row.id} row={row} />
+                    ))}
+                  </SortableContext>
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={columns.length}
+                      className="h-24 text-center"
+                    >
+                      No results.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </DndContext>
+        </div>
+        <div className="flex items-center justify-between px-4">
+          <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
+            {draftTable.getFilteredSelectedRowModel().rows.length} of{" "}
+            {draftTable.getFilteredRowModel().rows.length} row(s) selected.
+          </div>
+          <div className="flex w-full items-center gap-8 lg:w-fit">
+            <div className="hidden items-center gap-2 lg:flex">
+              <Label htmlFor="rows-per-page" className="text-sm font-medium">
+                Rows per page
+              </Label>
+              <Select
+                value={`${draftTable.getState().pagination.pageSize}`}
+                onValueChange={(value) => {
+                  draftTable.setPageSize(Number(value))
+                }}
+              >
+                <SelectTrigger className="w-20" id="rows-per-page">
+                  <SelectValue
+                    placeholder={draftTable.getState().pagination.pageSize}
+                  />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 30, 40, 50].map((pageSize) => (
+                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-fit items-center justify-center text-sm font-medium">
+              Page {draftTable.getState().pagination.pageIndex + 1} of{" "}
+              {draftTable.getPageCount()}
+            </div>
+            <div className="ml-auto flex items-center gap-2 lg:ml-0">
+              <Button
+                variant="outline"
+                className="hidden h-8 w-8 p-0 lg:flex"
+                onClick={() => draftTable.setPageIndex(0)}
+                disabled={!draftTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to first page</span>
+                <ChevronsLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => draftTable.previousPage()}
+                disabled={!draftTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to previous page</span>
+                <ChevronLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => draftTable.nextPage()}
+                disabled={!draftTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to next page</span>
+                <ChevronRightIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="hidden size-8 lg:flex"
+                size="icon"
+                onClick={() => draftTable.setPageIndex(draftTable.getPageCount() - 1)}
+                disabled={!draftTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to last page</span>
+                <ChevronsRightIcon />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </TabsContent>
       <TabsContent
         value="events-notify"
         className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"

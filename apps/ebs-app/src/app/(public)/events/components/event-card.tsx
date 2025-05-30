@@ -3,12 +3,12 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { subscribeToEvent } from '@/lib/actions'
+import { getEventSubscription, subscribeToEvent } from '@/lib/actions'
 import { Event } from '@/lib/types'
 import { format } from 'date-fns'
 import { BellIcon, Clock, Info, MapPinIcon, Ticket } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 type Props = {
   data?: Event,
@@ -16,7 +16,7 @@ type Props = {
 export default function EventCard({ data }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
-  const [subscription, setSubscription] = useState<string>()
+  const [subscription, setSubscription] = useState<number>()
   const buyTickets = useCallback(() => {
     router.push(`/${data?.name}/event/${data?.id}/tickets`)
   }, [router, data?.name, data?.id])
@@ -29,6 +29,15 @@ export default function EventCard({ data }: Props) {
     setSubscription(id)
     router.refresh()
   }, [data?.id])
+  useEffect(() => {
+    if (!data) {
+      return
+    }
+    getEventSubscription(data.id).then(id => {
+      setSubscription(id as number)
+    })
+  }, [data])
+
   return (
     <Card className="w-3xl h-auto">
       {(data?.status === 'notify' && data?.opens_at) && <div className="ml-8 text-sm">{ format(new Date(data.opens_at), 'MMM dd p') }</div>}

@@ -2,6 +2,10 @@ package models
 
 import (
 	"ebs/src/types"
+	"fmt"
+
+	"github.com/gosimple/slug"
+	"gorm.io/gorm"
 )
 
 type Organization struct {
@@ -26,13 +30,22 @@ type Organization struct {
 	types.Timestamps
 }
 
+func (o *Organization) AfterCreate(tx *gorm.DB) error {
+	newSlug := slug.Make(fmt.Sprintf("%s-%d", o.Name, o.ID))
+	if err := tx.Model(o).Update("slug", newSlug).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
 type Rating struct {
 	ID             uint `gorm:"primaryKey" json:"-"`
 	OrganizationID uint `json:"-"`
 	ByUser         uint `json:"-"`
 	Value          uint `json:"rating_value"`
 
-	User *User `gorm:"foreignKey:by" json:"-"`
+	Organization *Organization `json:"rating_target"`
+	User         *User         `gorm:"foreignKey:by_user" json:"-"`
 
 	types.Timestamps
 }

@@ -421,8 +421,8 @@ func PublishEvent(id uint) error {
 	err := db.Transaction(func(tx *gorm.DB) error {
 		err := tx.
 			Model(&models.Event{}).
-			Where(&models.Event{ID: id, Status: "draft"}).
-			Update("status", "open").Error
+			Where(&models.Event{ID: id, Status: types.EVENT_DRAFT}).
+			Update("status", types.EVENT_REGISTRATION).Error
 		if err != nil {
 			return err
 		}

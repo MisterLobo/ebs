@@ -18,6 +18,12 @@ var jwtKey = []byte(os.Getenv("JWT_SECRET"))
 var tokens []string
 
 func AuthMiddleware(ctx *gin.Context) {
+	secretToken := ctx.Request.Header.Get("x-secret")
+	realSecret := os.Getenv("API_SECRET")
+	if secretToken != realSecret {
+		ctx.AbortWithStatus(http.StatusForbidden)
+		return
+	}
 	bearerToken := ctx.Request.Header.Get("Authorization")
 	if !strings.HasPrefix(bearerToken, "Bearer") {
 		ctx.AbortWithStatus(http.StatusUnauthorized)

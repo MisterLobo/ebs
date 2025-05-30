@@ -40,6 +40,7 @@ func InitDb() *gorm.DB {
 		&models.Role{},
 		&models.Permission{},
 		&models.RolePermission{},
+		&models.Rating{},
 	)
 	if err != nil {
 		log.Fatalf("error migration: %s", err.Error())

@@ -36,7 +36,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
-	"github.com/gosimple/slug"
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
@@ -153,18 +152,28 @@ func main() {
 	router := gin.Default()
 
 	appEnv := os.Getenv("APP_ENV")
+	appHost := os.Getenv("APP_HOST")
 	if appEnv == "local" {
 		router.Use(cors.Default())
 	} else {
-		appUrl := os.Getenv("APP_HOST")
-		router.Use(cors.New(cors.Config{
-			AllowOrigins: []string{appUrl},
-			AllowOriginFunc: func(origin string) bool {
-				match, _ := regexp.MatchString(`(\w+.?)+\.amazonaws\.com$`, origin)
-				log.Printf("Origin matched: %v\n", match)
-				return match
-			},
-		}))
+		cc := cors.DefaultConfig()
+		cc.AllowMethods = append(cc.AllowMethods, "GET", "POST", "PATCH", "PUT", "DELETE", "HEAD")
+		cc.AllowHeaders = append(cc.AllowHeaders, "Origin")
+		cc.AllowOriginFunc = func(origin string) bool {
+			match, _ := regexp.MatchString(`(\w+.?)+\.amazonaws\.com$`, origin)
+			log.Printf("Origin matched: %v\n", match)
+			if match {
+				return true
+			}
+			match, _ = regexp.MatchString(appHost, origin)
+			if match {
+				return true
+			}
+			return false
+		}
+		cc.AllowCredentials = true
+		cc.AllowAllOrigins = false
+		router.Use(cors.New(cc))
 	}
 
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
@@ -173,6 +182,34 @@ func main() {
 		v.RegisterValidation("ltdate", ltfield)
 		v.RegisterValidation("betweenfields", betweenfields)
 	}
+
+	router.Use(func(ctx *gin.Context) {
+		secret := ctx.Request.Header.Get("x-secret")
+		log.Printf("[secret]: %s\n", secret)
+		origin := ctx.Request.Header.Get("origin")
+		log.Printf("[origin]: %s\n", origin)
+		match, _ := regexp.MatchString(`(\w+.?)?\.amazonaws\.com$`, origin)
+		if match {
+			return
+		}
+		log.Printf("Origin matched: %v %s\n", match, origin)
+		match, _ = regexp.MatchString(`(\w+.?)?\.stripe\.com$`, origin)
+		if match {
+			return
+		}
+		log.Printf("Origin matched: %v %s\n", match, origin)
+		match, _ = regexp.MatchString(`localhost:\d+`, origin)
+		if match {
+			return
+		}
+		log.Printf("Origin matched: %v %s\n", match, origin)
+		match, _ = regexp.MatchString(`app:mobile`, origin)
+		if match {
+			return
+		}
+		log.Printf("Origin matched: %v %s\n", match, origin)
+		ctx.AbortWithStatus(http.StatusNotFound)
+	})
 
 	router.Use(func(ctx *gin.Context) {
 		mm := os.Getenv("MAINTENANCE_MODE")
@@ -307,8 +344,6 @@ func main() {
 					Type:         types.ORG_PERSONAL,
 					ContactEmail: user.Email,
 				}
-				orgSlug := slug.Make(newOrg.Name)
-				newOrg.Slug = orgSlug
 				err = db.Create(&newOrg).Error
 				if err != nil {
 					return err
@@ -1922,6 +1957,32 @@ func main() {
 					return
 				}
 				ctx.JSON(http.StatusCreated, gin.H{"id": id})
+			}).
+			GET("/events/:id/subscription", func(ctx *gin.Context) {
+				var params types.SimpleRequestParams
+				if err := ctx.ShouldBindUri(&params); err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				var sub models.EventSubscription
+				subscriber := ctx.GetUint("id")
+				db := db.GetDb()
+				if err := db.
+					Model(&models.EventSubscription{}).
+					Where(&models.EventSubscription{EventID: params.ID, SubscriberID: subscriber}).
+					Select("id").
+					First(sub).
+					Error; err != nil {
+					log.Printf("Error retrieving EventSubscription: %s\n", err.Error())
+					if errors.Is(gorm.ErrRecordNotFound, err) {
+						ctx.JSON(http.StatusOK, gin.H{"data": 0})
+						return
+					}
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				log.Printf("[sub]: %v\n", sub.ID)
+				ctx.JSON(http.StatusOK, gin.H{"data": sub.ID})
 			}).
 			GET("/tickets", func(ctx *gin.Context) {
 				orgId := ctx.GetUint("org")

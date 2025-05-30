@@ -5,25 +5,43 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { format } from 'date-fns/format'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReservationCardActions from './components/card-actions'
-import { Booking } from '@/lib/types'
+import { Booking, Transaction } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { cancelReservation, getReservations, resumeCheckoutSession } from '@/lib/actions'
+import { cancelTransaction, getReservations, resumeCheckoutSession } from '@/lib/actions'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { isUpcoming } from '@/lib/utils'
 import { LoaderCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { useRouter } from 'next/navigation'
 
 function ReservationCard({ data }: { data: Booking }) {
-  const router = useRouter()
+  return (
+    <Card className="w-3xl h-auto">
+      <CardHeader>
+        <p>Date: { format(new Date(data?.created_at as string), 'PPP p') }</p>
+        <p className="text-xs">{ format(new Date(data.event?.date_time as string), 'PPP p') }</p>
+        <CardTitle>{ data?.slots_taken } slots</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p>{ data?.currency?.toUpperCase() } { Number(data?.subtotal).toLocaleString('en-US', { minimumFractionDigits: 2 }) }</p>
+        {data.status === 'completed' &&
+        <CardAction>
+          <ReservationCardActions data={data} />
+        </CardAction>}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function PersonalDashboardClient() {
+  const [reservations, setRes] = useState<Booking[]>()
+  const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [action, setAction] = useState<'cancel' | 'pay' | null>(null)
-  const upcoming = useMemo(() => data && isUpcoming(data.event?.date_time as string), [data])
 
-  const payNow = useCallback(async (res: Booking) => {
+  const payNow = useCallback(async (txn: Transaction) => {
     setAction('pay')
     setBusy(true)
-    const { url, error } = await resumeCheckoutSession(res.id, res.checkout_session_id as string)
+    const { url, error } = await resumeCheckoutSession(txn.id as string, txn.checkout_session_id as string)
     if (error) {
       toast('ERROR', {
         description: error,
@@ -36,12 +54,12 @@ function ReservationCard({ data }: { data: Booking }) {
     }
   }, [])
 
-  const cancelReservationClicked = useCallback(async () => {
+  const cancelTransactionClicked = useCallback(async (txn: Transaction) => {
     setAction('cancel')
     setBusy(true)
-    const { ok, error } = await cancelReservation(data.id)
+    const { ok, error, status } = await cancelTransaction({ id: txn.id as string})
     if (error) {
-      toast('ERROR', {
+      toast(`ERROR ${status}`, {
         description: error,
       })
       return
@@ -50,63 +68,39 @@ function ReservationCard({ data }: { data: Booking }) {
       toast('NOTICE', {
         description: 'Cancelation has been requested',
       })
-      router.refresh()
+      setBusy(false)
+      txn.status = 'canceled'
     }
-    router.refresh()
-  }, [data.id])
+  }, [])
 
-  return (
-    <Card className="w-3xl h-auto">
-      <CardHeader>
-      <p>Date: { format(new Date(data?.created_at as string), 'PPP p') }</p>
-        <p className="text-xs">{ format(new Date(data.event?.date_time as string), 'PPP p') }</p>
-        <CardTitle>{ data?.reserved_tickets?.length } entries</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p>{ data?.currency?.toUpperCase() } { Number(data?.subtotal).toLocaleString('en-US', { minimumFractionDigits: 2 }) }</p>
-        {data.status === 'completed' &&
-        <CardAction>
-          <ReservationCardActions data={data} />
-        </CardAction>}
-        {data.status === 'pending' &&
-        <CardAction className="flex items-center gap-2">
-          {upcoming ?
-          <>
-          <Button variant="destructive" className="cursor-pointer w-36" onClick={cancelReservationClicked} disabled={!data.checkout_session_id || busy}>
-            {busy && action === 'cancel' ?
-            <span className="inline-flex items-center gap-2">
-              <LoaderCircle className="animate-spin" />
-              <span>processing</span>
-            </span> : <span>Cancel reservation</span>}
-          </Button>
-          <Button className="cursor-pointer w-24" onClick={() => payNow(data)} disabled={!data.checkout_session_id || busy}>
-            {busy && action === 'pay' ? <LoaderCircle className="animate-spin" /> : <span>Pay now</span>}
-          </Button>
-          </> :
-          <>
-          <Button variant="destructive" className="cursor-pointer" disabled>Cancel reservation</Button>
-          <Button className="cursor-pointer disabled:pointer-events-none" disabled>Pay now</Button>
-          </>
-          }
-        </CardAction>
-        }
-      </CardContent>
-    </Card>
-  )
-}
-
-export function PersonalDashboardClient() {
-  const [reservations, setRes] = useState<Booking[]>()
-  const [error, setError] = useState<string>()
-
-  const { completed, pending, canceled } = useMemo(() => {
+  const { completed, canceled, transactions } = useMemo(() => {
+    if (!reservations) return {
+      completed: [],
+      canceled: [],
+      transactions: null,
+    }
+    
     const completed = reservations?.filter(r => r.status === 'completed') ?? []
     const pending = reservations?.filter(r => r.status === 'pending') ?? []
-    const canceled = reservations?.filter(r => r.status === 'canceled' || r.status === 'expired') ?? []
+    const canceled = reservations?.filter(r => r.status === 'canceled') ?? []
+    const pendingTransactions = new Map<string, { t?: Transaction, a: number, i?: Booking[] }>()
+    pending.forEach(v => {
+      let amt = 0
+      if (v.txn) {
+        amt = v.txn.currency?.toLowerCase() === 'usd' ? (v.txn.amount ?? 0) / 100.00 : v.txn.amount ?? 0
+      }
+      if (pendingTransactions.has(v.txn_id as string)) {
+        const txn = pendingTransactions.get(v.txn_id as string)
+        txn?.i?.push(v)
+        return
+      }
+      pendingTransactions.set(v.txn_id as string, { t: v.txn, a: amt, i: [v]})
+    })
+    
     return {
       completed,
-      pending,
       canceled,
+      transactions: pendingTransactions,
     }
   }, [reservations])
 
@@ -151,7 +145,7 @@ export function PersonalDashboardClient() {
           <Accordion type="single" collapsible defaultValue="upcoming">
             <AccordionItem value="upcoming">
               <AccordionTrigger>Upcoming</AccordionTrigger>
-              <AccordionContent>
+              <AccordionContent className="space-y-2">
               {upcoming.length > 0 ?
               upcoming.map((res, index) => (
                 <ReservationCard key={index} data={res} />
@@ -162,7 +156,7 @@ export function PersonalDashboardClient() {
             </AccordionItem>
             <AccordionItem value="past">
               <AccordionTrigger>Past</AccordionTrigger>
-              <AccordionContent>
+              <AccordionContent className="space-y-2">
               {past.length > 0 ?
               past.map((res, index) => (
                 <ReservationCard key={index} data={res} />
@@ -174,21 +168,40 @@ export function PersonalDashboardClient() {
           </Accordion>
         </TabsContent>
         <TabsContent value="pending" className="w-3xl h-auto">
-        {pending.length > 0 ?
+        {transactions && Array.from(transactions?.entries() as any).length > 0 ?
         <div className="space-y-2">
-        {pending.map((res, index: number) => (
-          <ReservationCard key={index} data={res} />
-        ))}
+          <Accordion type="single" collapsible>
+          {Array.from(transactions?.entries()).map(([k,v]) => (
+            <AccordionItem value={k} key={k}>
+              <AccordionTrigger>{ format(new Date(v.t?.created_at as string), 'MMM dd') }</AccordionTrigger>
+              <AccordionContent className="space-y-2">
+                <p>Total amount: { v.t?.currency?.toUpperCase() } { v.a.toLocaleString('en-US') }</p>
+                <div className="flex w-full items-center gap-2 my-2">
+                  <Button className="cursor-pointer" variant="destructive" disabled={v.t?.status !== 'pending' || busy} onClick={() => cancelTransactionClicked(v.t as Transaction)}>
+                    {busy && action === 'cancel' ? <LoaderCircle className="animate-spin" /> : <span>Cancel reservation</span>}
+                  </Button>
+                  <Button className="cursor-pointer w-24" onClick={() => payNow(v.t as Transaction)} disabled={v.t?.status !== 'pending' || !v.t?.checkout_session_id || busy}>
+                    {busy && action === 'pay' ? <LoaderCircle className="animate-spin" /> : <span>Pay now</span>}
+                  </Button>
+                </div>
+                {v?.i?.map((res, index: number) => (
+                  <ReservationCard key={index} data={res} />
+                ))}
+              </AccordionContent>
+            </AccordionItem>
+          )
+          )}
+          </Accordion>
         </div> :
-        <p className="text-center">Nothing to show</p>
+        <p className="text-center">No records to show</p>
         }
         </TabsContent>
-        <TabsContent value="Canceled" className="w-3xl h-auto">
+        <TabsContent value="Canceled" className="w-3xl h-auto space-y-2">
         {canceled.length > 0 ?
         canceled.map((res, index: number) => (
           <ReservationCard key={index} data={res} />
         )) :
-        <p className="text-center">Nothing to show</p>
+        <p className="text-center">No records to show</p>
         }
         </TabsContent>
       </Tabs>

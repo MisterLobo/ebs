@@ -24,7 +24,7 @@ export default async function EventsPage() {
     status: event.status as string,
     about: event.about as string,
     createdBy: event.created_by as number,
-    organizer: event.organizer_id as number,
+    organizer: event.organizer as number,
     type: 'standard',
   }))
   return (

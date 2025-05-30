@@ -48,7 +48,7 @@ export default function TicketCard({ data }: Props) {
   }, [])
 
   return (
-    <Card>
+    <Card className="col-span-4 min-w-96  w-full">
       <CardHeader>
         <CardTitle className="space-x-2 uppercase">
           <span>{ data?.tier }</span>
@@ -60,8 +60,6 @@ export default function TicketCard({ data }: Props) {
       <CardContent>
         <p>{ data?.type } ticket</p>
         <p><span className="uppercase">{ data?.currency }</span> { data?.price?.toLocaleString('en-US', { minimumFractionDigits: 2 }) }</p>
-        {/* <p>Ticket limit: { data?.limited ? data.limit?.toLocaleString('en-US') : 'No limit' }</p> */}
-        {/* <p>{ data?.stats?.reserved } reserved</p> */}
         <p>
         { soldOut ?
           <span className="text-red-500">Tickets are sold out</span> :

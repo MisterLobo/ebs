@@ -20,15 +20,16 @@ export default function ReservedTicket({ data, booking, reservation }: Props) {
   const [busy, setBusy] = useState(false)
   const [url, setUrl] = useState<string>()
   const link = useRef<HTMLAnchorElement>(null)
-  const canUse = useMemo(() => isUpcoming(booking?.event?.date_time as string), [reservation])
+  const admitted = useMemo(() => isUpcoming(booking?.event?.date_time as string) && booking?.status === 'completed' && reservation?.status === 'completed', [reservation])
+  const canUse = useMemo(() => isUpcoming(booking?.event?.date_time as string) && booking?.status === 'completed' && reservation?.status === 'paid' && !admitted, [reservation, admitted])
   const downloadQrCode = useCallback(async () => {
     if (!data) {
       return
     }
     setBusy(true)
-    const { blob, error } = await downloadTicket(data.id, reservation?.id as number)
+    const { blob, error, status } = await downloadTicket(data.id, reservation?.id as number)
     if (error) {
-      toast('ERROR', {
+      toast(`ERROR ${status}`, {
         description: error,
       })
       return
@@ -50,14 +51,14 @@ export default function ReservedTicket({ data, booking, reservation }: Props) {
         <CardTitle>#{ reservation?.id } { data?.tier } { data?.type }</CardTitle>
       </CardHeader>
       <CardContent>
-        {canUse ? <p>Valid until: { format(new Date(booking?.event?.date_time as string), 'PPP p') }</p> : <p className="text-orange-500">Ticket has expired</p>
+        {canUse ? <p>Valid until: { format(new Date(booking?.event?.date_time as string), 'PPP p') }</p> : (admitted ? <p className="text-orange-500 uppercase">admitted</p> : <p className="text-orange-500 uppercase">expired</p>)
         }
         <p>{ data?.currency?.toUpperCase() } { data?.price?.toLocaleString('en-US', { minimumFractionDigits: 2 }) }</p>
         <CardAction className="space-x-2">
-          <Button type="button" className="cursor-pointer disabled:pointer-events-none" disabled={!canUse}><Share2 /> SHARE</Button>
-          <Button type="button" className="cursor-pointer disabled:pointer-events-none" onClick={downloadQrCode} disabled={!canUse || busy}><Download /> DOWNLOAD QR CODE</Button>
-          <Button type="button" variant="secondary" className="cursor-pointer disabled:pointer-events-none" disabled><IconTransfer /> TRANSFER</Button>
-          <Button type="button" variant="destructive" className="cursor-pointer disabled:pointer-events-none" disabled><DollarSign /> SELL</Button>
+          <Button type="button" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" disabled={!canUse}><Share2 /> SHARE</Button>
+          <Button type="button" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" onClick={downloadQrCode} disabled={admitted || !canUse || busy}><Download /> DOWNLOAD QR CODE</Button>
+          <Button type="button" variant="secondary" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" disabled><IconTransfer /> TRANSFER</Button>
+          <Button type="button" variant="destructive" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" disabled><DollarSign /> SELL</Button>
         </CardAction>
       </CardContent>
       <a className="hidden" ref={link} download href={url}>Download</a>

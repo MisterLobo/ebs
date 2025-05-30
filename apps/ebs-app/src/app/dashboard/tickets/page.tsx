@@ -1,10 +1,13 @@
 import { ChartAreaInteractive } from '@/components/chart-area-interactive'
-import { DataTable } from '@/components/data-table'
+import { DataTable } from './components/data-table'
 import { SectionCards } from '@/components/section-cards'
 
 import { ChartBarInteractive } from '@/components/chart-bar-interactive'
+import { getActiveOrganization, getOrganizationTickets } from '@/lib/actions'
 
 export default async function EventPage() {
+  const org = await getActiveOrganization()
+  const tickets = await getOrganizationTickets(org?.id as number)
   return (
     <div className="flex flex-1 flex-col">
       <div className="@container/main flex flex-1 flex-col gap-2">
@@ -14,7 +17,7 @@ export default async function EventPage() {
             <ChartAreaInteractive />
             <ChartBarInteractive />
           </div>
-          <DataTable data={[]} />
+          <DataTable data={tickets} />
         </div>
       </div>
     </div>

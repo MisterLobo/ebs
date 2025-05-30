@@ -32,7 +32,7 @@ export default function WaitlistItem({ data }: Props) {
         <h2 className="text-md"><Badge>{ data.event?.status }</Badge></h2>
         <Separator />
         <CardAction>
-          {data.event?.status === 'open' && <Button className="cursor-pointer" disabled={!upcoming} onClick={buyTickets}>Buy Tickets</Button>}
+          {data.event?.status === 'registration' && <Button className="cursor-pointer" disabled={!upcoming} onClick={buyTickets}>Buy Tickets</Button>}
           {data.event?.status === 'notify' && <Button variant="destructive" className="cursor-pointer" disabled><Trash /> Remove</Button>}
         </CardAction>
       </CardContent>

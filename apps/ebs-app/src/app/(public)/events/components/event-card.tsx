@@ -50,7 +50,7 @@ export default function EventCard({ data }: Props) {
           <Button variant="secondary" disabled className="pointer-events-none w-32"><BellIcon /> Subscribed</Button> :
           <div className="inline-flex flex-col items-center gap-2">
           {data?.status === 'notify' && <Button className="cursor-pointer w-32" onClick={notifyMe} disabled={busy}><BellIcon /> Notify me</Button>}
-          {data?.status === 'open' && <Button className="cursor-pointer w-32" onClick={buyTickets} disabled={busy}><Ticket />Buy Tickets</Button>}
+          {data?.status === 'registration' && <Button className="cursor-pointer w-32" onClick={buyTickets} disabled={busy}><Ticket />Buy Tickets</Button>}
           <Button className="cursor-pointer disabled:pointer-events-none w-32" variant="secondary" disabled><Info />More details</Button>
           </div>
           }

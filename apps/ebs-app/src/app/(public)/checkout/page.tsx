@@ -17,7 +17,9 @@ export default function CheckoutPage() {
       alert(error)
       return
     }
-    location.href = url
+    if (url) {
+      location.href = url
+    }
   }, [items])
   return (
     <div className="container mx-auto">

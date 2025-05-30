@@ -2,7 +2,6 @@
 
 import { useRouter } from 'next/navigation'
 import { Button } from '../ui/button'
-import { SunIcon } from 'lucide-react'
 import { NavigationSheet } from './navigation-sheet'
 import { ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
@@ -23,14 +22,12 @@ export default function NavActions({ authenticated, hasOrg, className, ...props 
       <Button className="cursor-pointer" onClick={() => router.push('/register')}>Sign Up</Button>
       </>
       }
-      {hasOrg &&
+      {hasOrg ?
       <>
       <Button className="cursor-pointer" onClick={() => router.push('/dashboard')}>Dashboard</Button>
-      </>
+      </> :
+      <Button className="cursor-pointer" onClick={() => router.push('/dashboard/events/new')}>Host an Event</Button>
       }
-      <Button size="icon" variant="outline">
-        <SunIcon />
-      </Button>
 
       {/* Mobile Menu */}
       <div className="md:hidden">

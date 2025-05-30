@@ -1,7 +1,7 @@
 import { AppSidebar } from '@/components/app-sidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { getActiveOrganization, listOrganizations, organizationOnboarding } from '@/lib/actions'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { ReactNode } from 'react'
 import { OnboardingNotice } from './components/notice'
 
@@ -10,6 +10,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const org = await getActiveOrganization()
   if (!org) {
     throw notFound()
+  }
+  if (org.type === 'personal') {
+    redirect('/setup/organizations/create')
   }
   const { completed, url } = await organizationOnboarding(org?.id ?? 0)
 

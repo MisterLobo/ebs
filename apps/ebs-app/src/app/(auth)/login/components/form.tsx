@@ -32,7 +32,7 @@ export default function LoginForm() {
           setError(error)
           return
         }
-        router.push('/dashboard')
+        router.push('/personal/dashboard')
       }
     } catch (error: any) {
       alert(`[error]: ${error.message}`)

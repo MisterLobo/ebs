@@ -1,11 +1,11 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { getActiveOrganization, organizationOnboarding, publishEvent } from '@/lib/actions'
+import { getActiveOrganization, organizationOnboarding, publishEvent, setEventStatus } from '@/lib/actions'
 import { Event } from '@/lib/types'
 import { PlusIcon } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type Props = {
   event?: Event,
@@ -30,7 +30,7 @@ export function EventPageHeaderActions({ event }: Props) {
     router.push(`/dashboard/events/${eventId}/tickets/new`)
   }
 
-  const publish = async () => {
+  const publish = useCallback(async () => {
     if (!onboardingComplete) {
       return
     }
@@ -42,7 +42,26 @@ export function EventPageHeaderActions({ event }: Props) {
       return
     }
     router.refresh()
-  }
+  }, [router, onboardingComplete, eventId])
+
+  const openReg = useCallback(async () => {
+    setBusy(true)
+    await setEventStatus(event?.id as number, 'registration')
+    setBusy(false)
+    router.refresh()
+  }, [])
+  const openAdm = useCallback(async () => {
+    setBusy(true)
+    await setEventStatus(event?.id as number, 'admission')
+    setBusy(false)
+    router.refresh()
+  }, [])
+  const closeAdm = useCallback(async () => {
+    setBusy(true)
+    await setEventStatus(event?.id as number, 'closed')
+    setBusy(false)
+    router.refresh()
+  }, [])
 
   return (
     <div className="flex w-full p-4 relative gap-2">
@@ -51,6 +70,8 @@ export function EventPageHeaderActions({ event }: Props) {
         <span>NEW TICKET</span>
       </Button>
       {['draft', 'notify'].includes(event?.status ?? '') && <Button type="button" className="cursor-pointer" onClick={publish} disabled={!onboardingComplete || loading || busy}>{ busy ? 'PUBLISHING' : 'PUBLISH' }</Button>}
+      {event?.status === 'notify' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={openReg}>OPEN REGISTRATION</Button>}
+      {event?.status === 'registration' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={openAdm}>OPEN ADMISSION</Button>}{event?.status === 'admission' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={closeAdm}>CLOSE ADMISSION</Button>}
     </div>
   )
 }

@@ -43,7 +43,6 @@ import {
   ChevronsLeftIcon,
   ChevronsRightIcon,
   ColumnsIcon,
-  GripVerticalIcon,
   LoaderIcon,
   MoreVerticalIcon,
   PlusIcon,
@@ -118,32 +117,7 @@ export const schema = z.object({
   organizer: z.number(),
 })
 
-// Create a separate component for the drag handle
-function DragHandle({ id }: { id: number }) {
-  const { attributes, listeners } = useSortable({
-    id,
-  })
-
-  return (
-    <Button
-      {...attributes}
-      {...listeners}
-      variant="ghost"
-      size="icon"
-      className="size-7 text-muted-foreground hover:bg-transparent"
-    >
-      <GripVerticalIcon className="size-3 text-muted-foreground" />
-      <span className="sr-only">Drag to reorder</span>
-    </Button>
-  )
-}
-
 const columns: ColumnDef<z.infer<typeof schema>>[] = [
-  {
-    id: "drag",
-    header: () => null,
-    cell: ({ row }) => <DragHandle id={row.original.id} />,
-  },
   {
     id: "select",
     header: ({ table }) => (
@@ -322,8 +296,150 @@ export function DataTable({
     [data]
   )
 
-  const table = useReactTable({
-    data,
+  const { notify, registration, admission, completed, canceled, expired } = React.useMemo(() => {
+    const notify = data.filter(v => v.status === 'notify')
+    const registration = data.filter(v => v.status === 'registration')
+    const admission = data.filter(v => v.status === 'admission')
+    const completed = data.filter(v => v.status === 'completed')
+    const canceled = data.filter(v => v.status === 'canceled')
+    const expired = data.filter(v => v.status === 'expired')
+    return {
+      notify,
+      registration,
+      admission,
+      completed,
+      canceled,
+      expired,
+    }
+  }, [data])
+
+  const notifyTable = useReactTable({
+    data: notify,
+    columns,
+    state: {
+      sorting,
+      columnVisibility,
+      rowSelection,
+      columnFilters,
+      pagination,
+    },
+    getRowId: (row) => row.id.toString(),
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
+  })
+
+  const registrationTable = useReactTable({
+    data: registration,
+    columns,
+    state: {
+      sorting,
+      columnVisibility,
+      rowSelection,
+      columnFilters,
+      pagination,
+    },
+    getRowId: (row) => row.id.toString(),
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
+  })
+
+  const admissionTable = useReactTable({
+    data: admission,
+    columns,
+    state: {
+      sorting,
+      columnVisibility,
+      rowSelection,
+      columnFilters,
+      pagination,
+    },
+    getRowId: (row) => row.id.toString(),
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
+  })
+
+  const completedTable = useReactTable({
+    data: completed,
+    columns,
+    state: {
+      sorting,
+      columnVisibility,
+      rowSelection,
+      columnFilters,
+      pagination,
+    },
+    getRowId: (row) => row.id.toString(),
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
+  })
+
+  const canceledTable = useReactTable({
+    data: canceled,
+    columns,
+    state: {
+      sorting,
+      columnVisibility,
+      rowSelection,
+      columnFilters,
+      pagination,
+    },
+    getRowId: (row) => row.id.toString(),
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
+  })
+
+  const expiredTable = useReactTable({
+    data: expired,
     columns,
     state: {
       sorting,
@@ -360,14 +476,14 @@ export function DataTable({
 
   return (
     <Tabs
-      defaultValue="outline"
+      defaultValue="events-notify"
       className="flex w-full flex-col justify-start gap-6"
     >
       <div className="flex items-center justify-between px-4 lg:px-6">
         <Label htmlFor="view-selector" className="sr-only">
           View
         </Label>
-        <Select defaultValue="outline">
+        <Select defaultValue="events-notify">
           <SelectTrigger
             className="@4xl/main:hidden flex w-fit"
             id="view-selector"
@@ -375,33 +491,65 @@ export function DataTable({
             <SelectValue placeholder="Select a view" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="outline">Outline</SelectItem>
-            <SelectItem value="past-performance">Past Performance</SelectItem>
-            <SelectItem value="key-personnel">Key Personnel</SelectItem>
-            <SelectItem value="focus-documents">Focus Documents</SelectItem>
+            <SelectItem value="events-notify">Notify</SelectItem>
+            <SelectItem value="events-registration">Registration</SelectItem>
+            <SelectItem value="events-admission">Admission</SelectItem>
+            <SelectItem value="events-completed">Completed</SelectItem>
+            <SelectItem value="events-canceled">Canceled</SelectItem>
+            <SelectItem value="events-expired">Expired</SelectItem>
           </SelectContent>
         </Select>
         <TabsList className="@4xl/main:flex hidden">
-          <TabsTrigger value="outline">Outline</TabsTrigger>
-          <TabsTrigger value="past-performance" className="gap-1">
-            Past Performance{" "}
-            <Badge
+          <TabsTrigger value="events-notify">Notify{" "}
+            {notify.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
             >
-              3
-            </Badge>
+              {notify.length}
+            </Badge>}
           </TabsTrigger>
-          <TabsTrigger value="key-personnel" className="gap-1">
-            Key Personnel{" "}
-            <Badge
+          <TabsTrigger value="events-registration" className="gap-1">
+            Registration{" "}
+            {registration.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
             >
-              2
-            </Badge>
+              {registration.length}
+            </Badge>}
           </TabsTrigger>
-          <TabsTrigger value="focus-documents">Focus Documents</TabsTrigger>
+          <TabsTrigger value="events-admission" className="gap-1">
+            Admission{" "}
+            {admission.length > 0 && <Badge
+              variant="secondary"
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
+            >
+              {admission.length}
+            </Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="events-completed">Completed{" "}
+            {completed.length > 0 && <Badge
+              variant="secondary"
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
+            >
+              {completed.length}
+            </Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="events-canceled">Canceled{" "}
+            {canceled.length > 0 && <Badge
+              variant="secondary"
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
+            >
+              {canceled.length}
+            </Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="events-expired">Expired{" "}
+            {expired.length > 0 && <Badge
+              variant="secondary"
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
+            >
+              {expired.length}
+            </Badge>}
+          </TabsTrigger>
         </TabsList>
         <div className="flex items-center gap-2">
           <DropdownMenu>
@@ -414,7 +562,7 @@ export function DataTable({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              {table
+              {notifyTable
                 .getAllColumns()
                 .filter(
                   (column) =>
@@ -444,7 +592,7 @@ export function DataTable({
         </div>
       </div>
       <TabsContent
-        value="outline"
+        value="events-notify"
         className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
       >
         <div className="overflow-hidden rounded-lg border">
@@ -457,7 +605,7 @@ export function DataTable({
           >
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-muted">
-                {table.getHeaderGroups().map((headerGroup) => (
+                {notifyTable.getHeaderGroups().map((headerGroup) => (
                   <TableRow key={headerGroup.id}>
                     {headerGroup.headers.map((header) => {
                       return (
@@ -475,12 +623,12 @@ export function DataTable({
                 ))}
               </TableHeader>
               <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                {table.getRowModel().rows?.length ? (
+                {notifyTable.getRowModel().rows?.length ? (
                   <SortableContext
                     items={dataIds}
                     strategy={verticalListSortingStrategy}
                   >
-                    {table.getRowModel().rows.map((row) => (
+                    {notifyTable.getRowModel().rows.map((row) => (
                       <DraggableRow key={row.id} row={row} />
                     ))}
                   </SortableContext>
@@ -500,8 +648,8 @@ export function DataTable({
         </div>
         <div className="flex items-center justify-between px-4">
           <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-            {table.getFilteredSelectedRowModel().rows.length} of{" "}
-            {table.getFilteredRowModel().rows.length} row(s) selected.
+            {notifyTable.getFilteredSelectedRowModel().rows.length} of{" "}
+            {notifyTable.getFilteredRowModel().rows.length} row(s) selected.
           </div>
           <div className="flex w-full items-center gap-8 lg:w-fit">
             <div className="hidden items-center gap-2 lg:flex">
@@ -509,14 +657,14 @@ export function DataTable({
                 Rows per page
               </Label>
               <Select
-                value={`${table.getState().pagination.pageSize}`}
+                value={`${notifyTable.getState().pagination.pageSize}`}
                 onValueChange={(value) => {
-                  table.setPageSize(Number(value))
+                  notifyTable.setPageSize(Number(value))
                 }}
               >
                 <SelectTrigger className="w-20" id="rows-per-page">
                   <SelectValue
-                    placeholder={table.getState().pagination.pageSize}
+                    placeholder={notifyTable.getState().pagination.pageSize}
                   />
                 </SelectTrigger>
                 <SelectContent side="top">
@@ -529,15 +677,15 @@ export function DataTable({
               </Select>
             </div>
             <div className="flex w-fit items-center justify-center text-sm font-medium">
-              Page {table.getState().pagination.pageIndex + 1} of{" "}
-              {table.getPageCount()}
+              Page {notifyTable.getState().pagination.pageIndex + 1} of{" "}
+              {notifyTable.getPageCount()}
             </div>
             <div className="ml-auto flex items-center gap-2 lg:ml-0">
               <Button
                 variant="outline"
                 className="hidden h-8 w-8 p-0 lg:flex"
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
+                onClick={() => notifyTable.setPageIndex(0)}
+                disabled={!notifyTable.getCanPreviousPage()}
               >
                 <span className="sr-only">Go to first page</span>
                 <ChevronsLeftIcon />
@@ -546,8 +694,8 @@ export function DataTable({
                 variant="outline"
                 className="size-8"
                 size="icon"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
+                onClick={() => notifyTable.previousPage()}
+                disabled={!notifyTable.getCanPreviousPage()}
               >
                 <span className="sr-only">Go to previous page</span>
                 <ChevronLeftIcon />
@@ -556,8 +704,8 @@ export function DataTable({
                 variant="outline"
                 className="size-8"
                 size="icon"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
+                onClick={() => notifyTable.nextPage()}
+                disabled={!notifyTable.getCanNextPage()}
               >
                 <span className="sr-only">Go to next page</span>
                 <ChevronRightIcon />
@@ -566,8 +714,8 @@ export function DataTable({
                 variant="outline"
                 className="hidden size-8 lg:flex"
                 size="icon"
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
+                onClick={() => notifyTable.setPageIndex(notifyTable.getPageCount() - 1)}
+                disabled={!notifyTable.getCanNextPage()}
               >
                 <span className="sr-only">Go to last page</span>
                 <ChevronsRightIcon />
@@ -577,19 +725,653 @@ export function DataTable({
         </div>
       </TabsContent>
       <TabsContent
-        value="past-performance"
-        className="flex flex-col px-4 lg:px-6"
+        value="events-registration"
+        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
       >
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
-      </TabsContent>
-      <TabsContent value="key-personnel" className="flex flex-col px-4 lg:px-6">
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted">
+              {registrationTable.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id} colSpan={header.colSpan}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody className="**:data-[slot=table-cell]:first:w-8">
+              {registrationTable.getRowModel().rows?.length ? (
+                registrationTable.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className="relative z-0 data-[dragging=true]:z-10 data-[dragging=true]:opacity-80"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center"
+                  >
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex items-center justify-between px-4">
+          <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
+            {registrationTable.getFilteredSelectedRowModel().rows.length} of{" "}
+            {registrationTable.getFilteredRowModel().rows.length} row(s) selected.
+          </div>
+          <div className="flex w-full items-center gap-8 lg:w-fit">
+            <div className="hidden items-center gap-2 lg:flex">
+              <Label htmlFor="rows-per-page" className="text-sm font-medium">
+                Rows per page
+              </Label>
+              <Select
+                value={`${registrationTable.getState().pagination.pageSize}`}
+                onValueChange={(value) => {
+                  registrationTable.setPageSize(Number(value))
+                }}
+              >
+                <SelectTrigger className="w-20" id="rows-per-page">
+                  <SelectValue
+                    placeholder={registrationTable.getState().pagination.pageSize}
+                  />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 30, 40, 50].map((pageSize) => (
+                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-fit items-center justify-center text-sm font-medium">
+              Page {registrationTable.getState().pagination.pageIndex + 1} of{" "}
+              {registrationTable.getPageCount()}
+            </div>
+            <div className="ml-auto flex items-center gap-2 lg:ml-0">
+              <Button
+                variant="outline"
+                className="hidden h-8 w-8 p-0 lg:flex"
+                onClick={() => registrationTable.setPageIndex(0)}
+                disabled={!registrationTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to first page</span>
+                <ChevronsLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => registrationTable.previousPage()}
+                disabled={!registrationTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to previous page</span>
+                <ChevronLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => registrationTable.nextPage()}
+                disabled={!registrationTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to next page</span>
+                <ChevronRightIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="hidden size-8 lg:flex"
+                size="icon"
+                onClick={() => registrationTable.setPageIndex(registrationTable.getPageCount() - 1)}
+                disabled={!registrationTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to last page</span>
+                <ChevronsRightIcon />
+              </Button>
+            </div>
+          </div>
+        </div>
       </TabsContent>
       <TabsContent
-        value="focus-documents"
-        className="flex flex-col px-4 lg:px-6"
+        value="events-admission" 
+        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted">
+              {admissionTable.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id} colSpan={header.colSpan}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody className="**:data-[slot=table-cell]:first:w-8">
+              {admissionTable.getRowModel().rows?.length ? (
+                admissionTable.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className="relative z-0 data-[dragging=true]:z-10 data-[dragging=true]:opacity-80"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center"
+                  >
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex items-center justify-between px-4">
+          <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
+            {admissionTable.getFilteredSelectedRowModel().rows.length} of{" "}
+            {admissionTable.getFilteredRowModel().rows.length} row(s) selected.
+          </div>
+          <div className="flex w-full items-center gap-8 lg:w-fit">
+            <div className="hidden items-center gap-2 lg:flex">
+              <Label htmlFor="rows-per-page" className="text-sm font-medium">
+                Rows per page
+              </Label>
+              <Select
+                value={`${admissionTable.getState().pagination.pageSize}`}
+                onValueChange={(value) => {
+                  admissionTable.setPageSize(Number(value))
+                }}
+              >
+                <SelectTrigger className="w-20" id="rows-per-page">
+                  <SelectValue
+                    placeholder={admissionTable.getState().pagination.pageSize}
+                  />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 30, 40, 50].map((pageSize) => (
+                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-fit items-center justify-center text-sm font-medium">
+              Page {admissionTable.getState().pagination.pageIndex + 1} of{" "}
+              {admissionTable.getPageCount()}
+            </div>
+            <div className="ml-auto flex items-center gap-2 lg:ml-0">
+              <Button
+                variant="outline"
+                className="hidden h-8 w-8 p-0 lg:flex"
+                onClick={() => admissionTable.setPageIndex(0)}
+                disabled={!admissionTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to first page</span>
+                <ChevronsLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => admissionTable.previousPage()}
+                disabled={!admissionTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to previous page</span>
+                <ChevronLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => admissionTable.nextPage()}
+                disabled={!admissionTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to next page</span>
+                <ChevronRightIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="hidden size-8 lg:flex"
+                size="icon"
+                onClick={() => admissionTable.setPageIndex(admissionTable.getPageCount() - 1)}
+                disabled={!admissionTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to last page</span>
+                <ChevronsRightIcon />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </TabsContent>
+      <TabsContent
+        value="events-completed"
+        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
       >
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted">
+              {completedTable.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id} colSpan={header.colSpan}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody className="**:data-[slot=table-cell]:first:w-8">
+              {completedTable.getRowModel().rows?.length ? (
+                completedTable.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className="relative z-0 data-[dragging=true]:z-10 data-[dragging=true]:opacity-80"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center"
+                  >
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex items-center justify-between px-4">
+          <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
+            {completedTable.getFilteredSelectedRowModel().rows.length} of{" "}
+            {completedTable.getFilteredRowModel().rows.length} row(s) selected.
+          </div>
+          <div className="flex w-full items-center gap-8 lg:w-fit">
+            <div className="hidden items-center gap-2 lg:flex">
+              <Label htmlFor="rows-per-page" className="text-sm font-medium">
+                Rows per page
+              </Label>
+              <Select
+                value={`${completedTable.getState().pagination.pageSize}`}
+                onValueChange={(value) => {
+                  completedTable.setPageSize(Number(value))
+                }}
+              >
+                <SelectTrigger className="w-20" id="rows-per-page">
+                  <SelectValue
+                    placeholder={completedTable.getState().pagination.pageSize}
+                  />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 30, 40, 50].map((pageSize) => (
+                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-fit items-center justify-center text-sm font-medium">
+              Page {completedTable.getState().pagination.pageIndex + 1} of{" "}
+              {completedTable.getPageCount()}
+            </div>
+            <div className="ml-auto flex items-center gap-2 lg:ml-0">
+              <Button
+                variant="outline"
+                className="hidden h-8 w-8 p-0 lg:flex"
+                onClick={() => completedTable.setPageIndex(0)}
+                disabled={!completedTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to first page</span>
+                <ChevronsLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => completedTable.previousPage()}
+                disabled={!completedTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to previous page</span>
+                <ChevronLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => completedTable.nextPage()}
+                disabled={!completedTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to next page</span>
+                <ChevronRightIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="hidden size-8 lg:flex"
+                size="icon"
+                onClick={() => completedTable.setPageIndex(completedTable.getPageCount() - 1)}
+                disabled={!completedTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to last page</span>
+                <ChevronsRightIcon />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </TabsContent>
+      <TabsContent
+        value="events-canceled"
+        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
+      >
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted">
+              {canceledTable.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id} colSpan={header.colSpan}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody className="**:data-[slot=table-cell]:first:w-8">
+              {canceledTable.getRowModel().rows?.length ? (
+                canceledTable.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className="relative z-0 data-[dragging=true]:z-10 data-[dragging=true]:opacity-80"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center"
+                  >
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex items-center justify-between px-4">
+          <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
+            {canceledTable.getFilteredSelectedRowModel().rows.length} of{" "}
+            {canceledTable.getFilteredRowModel().rows.length} row(s) selected.
+          </div>
+          <div className="flex w-full items-center gap-8 lg:w-fit">
+            <div className="hidden items-center gap-2 lg:flex">
+              <Label htmlFor="rows-per-page" className="text-sm font-medium">
+                Rows per page
+              </Label>
+              <Select
+                value={`${canceledTable.getState().pagination.pageSize}`}
+                onValueChange={(value) => {
+                  canceledTable.setPageSize(Number(value))
+                }}
+              >
+                <SelectTrigger className="w-20" id="rows-per-page">
+                  <SelectValue
+                    placeholder={canceledTable.getState().pagination.pageSize}
+                  />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 30, 40, 50].map((pageSize) => (
+                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-fit items-center justify-center text-sm font-medium">
+              Page {canceledTable.getState().pagination.pageIndex + 1} of{" "}
+              {canceledTable.getPageCount()}
+            </div>
+            <div className="ml-auto flex items-center gap-2 lg:ml-0">
+              <Button
+                variant="outline"
+                className="hidden h-8 w-8 p-0 lg:flex"
+                onClick={() => canceledTable.setPageIndex(0)}
+                disabled={!canceledTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to first page</span>
+                <ChevronsLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => canceledTable.previousPage()}
+                disabled={!canceledTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to previous page</span>
+                <ChevronLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => canceledTable.nextPage()}
+                disabled={!canceledTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to next page</span>
+                <ChevronRightIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="hidden size-8 lg:flex"
+                size="icon"
+                onClick={() => canceledTable.setPageIndex(canceledTable.getPageCount() - 1)}
+                disabled={!canceledTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to last page</span>
+                <ChevronsRightIcon />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </TabsContent>
+      <TabsContent
+        value="events-expired"
+        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
+      >
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted">
+              {expiredTable.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id} colSpan={header.colSpan}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody className="**:data-[slot=table-cell]:first:w-8">
+              {expiredTable.getRowModel().rows?.length ? (
+                expiredTable.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className="relative z-0 data-[dragging=true]:z-10 data-[dragging=true]:opacity-80"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center"
+                  >
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex items-center justify-between px-4">
+          <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
+            {expiredTable.getFilteredSelectedRowModel().rows.length} of{" "}
+            {expiredTable.getFilteredRowModel().rows.length} row(s) selected.
+          </div>
+          <div className="flex w-full items-center gap-8 lg:w-fit">
+            <div className="hidden items-center gap-2 lg:flex">
+              <Label htmlFor="rows-per-page" className="text-sm font-medium">
+                Rows per page
+              </Label>
+              <Select
+                value={`${expiredTable.getState().pagination.pageSize}`}
+                onValueChange={(value) => {
+                  expiredTable.setPageSize(Number(value))
+                }}
+              >
+                <SelectTrigger className="w-20" id="rows-per-page">
+                  <SelectValue
+                    placeholder={expiredTable.getState().pagination.pageSize}
+                  />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 30, 40, 50].map((pageSize) => (
+                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-fit items-center justify-center text-sm font-medium">
+              Page {expiredTable.getState().pagination.pageIndex + 1} of{" "}
+              {expiredTable.getPageCount()}
+            </div>
+            <div className="ml-auto flex items-center gap-2 lg:ml-0">
+              <Button
+                variant="outline"
+                className="hidden h-8 w-8 p-0 lg:flex"
+                onClick={() => expiredTable.setPageIndex(0)}
+                disabled={!expiredTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to first page</span>
+                <ChevronsLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => expiredTable.previousPage()}
+                disabled={!expiredTable.getCanPreviousPage()}
+              >
+                <span className="sr-only">Go to previous page</span>
+                <ChevronLeftIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="size-8"
+                size="icon"
+                onClick={() => expiredTable.nextPage()}
+                disabled={!expiredTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to next page</span>
+                <ChevronRightIcon />
+              </Button>
+              <Button
+                variant="outline"
+                className="hidden size-8 lg:flex"
+                size="icon"
+                onClick={() => expiredTable.setPageIndex(expiredTable.getPageCount() - 1)}
+                disabled={!expiredTable.getCanNextPage()}
+              >
+                <span className="sr-only">Go to last page</span>
+                <ChevronsRightIcon />
+              </Button>
+            </div>
+          </div>
+        </div>
       </TabsContent>
     </Tabs>
   )

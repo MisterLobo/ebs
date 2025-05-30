@@ -60,10 +60,12 @@ export default async function EventPage() {
     {completed ?
     <>
     {ticketsData.length > 0 ?
-    <div className="mx-auto min-w-96 flex flex-row">
-      {ticketsData.map(ticket => (
-        <TicketCard ticket={ticket} key={ticket.id} />
-      ))}
+    <div className="flex items-center justify-center w-full">
+      <div className="min-w-96 w-full flex flex-row flex-wrap items-center grow">
+        {ticketsData.map(ticket => (
+          <TicketCard ticket={ticket} key={ticket.id} />
+        ))}
+      </div>
     </div> :
     <p className="text-center italic text-gray-400">This event does not have any tickets. Create one to display here</p>
     }

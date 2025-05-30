@@ -8,6 +8,7 @@ import CartListItem from './cart-list-item'
 import { TrashIcon } from 'lucide-react'
 import { createCheckoutSession } from '@/lib/actions'
 import { IconBasket } from '@tabler/icons-react'
+import { toast } from 'sonner'
 
 export default function CartItems() {
   const { total, items, clearCart } = useCart()
@@ -18,17 +19,24 @@ export default function CartItems() {
       qty: item.qty as number,
       ticket: item.ticket?.id as number,
     }))
-    const { url, error } = await createCheckoutSession(lineItems)
+    const { url, error, status } = await createCheckoutSession(lineItems)
     if (error) {
-      alert(error)
+      console.error(`ERROR ${status}:`, error)
+      toast(`ERROR ${status}`, {
+        description: error,
+      })
       setBusy(false)
+      return
+    }
+    if (!url) {
+      alert('Could not proceed to checkout. Reason: URL missing')
       return
     }
     location.href = url
   }, [items])
 
   return (
-    <div className="flex flex-col min-w-96 border rounded h-screen fixed right-0 top-0 p-4 z-10 overflow-y-scroll">
+    <div className="flex flex-col min-w-96 border rounded h-screen fixed right-0 top-0 p-4 z-10 overflow-y-scroll bg-background">
       <h3 className="text-lg font-semibold flex gap-2"><IconBasket /> My Cart</h3>
       <Separator className="my-4" />
       {items.length > 0 && <div className="flex items-center justify-between">

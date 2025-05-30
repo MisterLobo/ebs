@@ -1,7 +1,7 @@
 'use server'
 
 import { cookies } from 'next/headers'
-import { Event, EventQueryFilters, NewEventRequestPayload, NewOrganizationRequestPayload, NewTicketRequestPayload, Organization, Ticket } from './types'
+import { Admission, Booking, Event, EventQueryFilters, NewEventRequestPayload, NewOrganizationRequestPayload, NewTicketRequestPayload, Organization, Ticket, Transaction } from './types'
 import { notFound, redirect } from 'next/navigation'
 import { TurnstileServerValidationResponse } from '@marsidev/react-turnstile'
 
@@ -163,6 +163,23 @@ export async function publishEvent(id: number) {
   return error
 }
 
+export async function setEventStatus(id: number, new_status: string) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/events/${id}/status`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'PATCH',
+    body: JSON.stringify({
+      new_status,
+    })
+  })
+  const { error } = await response.json()
+  console.log('[status]:', response.status, error)
+  return error
+}
+
 export async function getEvents(orgId?: number, filters?: EventQueryFilters) {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
@@ -296,7 +313,7 @@ export async function loginUser(email: string) {
   }
 }
 
-export async function createCheckoutSession(items: { qty: number, ticket: number }[]) {
+export async function createCheckoutSession(items: { qty: number, ticket: number }[]): Promise<{ url?: string, error?: string, status?: number }> {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
   const response = await fetch(`${process.env.API_HOST}/checkout`, {
@@ -308,20 +325,31 @@ export async function createCheckoutSession(items: { qty: number, ticket: number
       items,
     })
   })
+  if (![200, 400].includes(response.status)) {
+    console.error('API returned a non-200 status:', response.status)
+    return {}
+  }
   const { url, error } = await response.json()
-  return { url, error }
+  if (response.status === 200) {
+    return { url }
+  } else if (response.status === 400) {
+    return { status: response.status, error }
+  } else {
+    return { status: response.status, error: response.statusText }
+  }
 }
 
-export async function resumeCheckoutSession(id: number, checkoutId: string) {
+export async function resumeCheckoutSession(id: string, checkoutId: string) {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
-  const response = await fetch(`${process.env.API_HOST}/bookings/${id}/checkout`, {
+  const response = await fetch(`${process.env.API_HOST}/transactions/checkout`, {
     headers: {
       'Authorization': `Bearer ${token}`,
     },
     method: 'POST',
     body: JSON.stringify({
       checkout_id: checkoutId,
+      id,
     }),
   })
   const { url, error } = await response.json()
@@ -340,6 +368,32 @@ export async function cancelReservation(bookingId: number) {
   if (response.status !== 204) {
     const { error } = await response.json()
     return { ok: false, error }
+  }
+  return { ok: true }
+}
+
+export async function cancelTransaction({ id, bookings }: { id?: string, bookings?: number[] }) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const body: Record<string, any> = {}
+  if (id) {
+    body['txn_id'] = id
+    body['type'] = 'transaction'
+  }
+  if (bookings) {
+    body['ids'] = bookings
+    body['type'] = 'reservation'
+  }
+  const response = await fetch(`${process.env.API_HOST}/bookings/cancel`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+  if (response.status !== 204) {
+    const { error } = await response.json()
+    return { ok: false, error, status: response.status }
   }
   return { ok: true }
 }
@@ -423,9 +477,12 @@ export async function downloadTicket(id: number, resId: number) {
     },
     method: 'POST',
   })
-  if (response.status !== 200) {
+  if (response.status === 400) {
     const { error } = await response.json()
-    return { error }
+    return { error, status: response.status }
+  } else if (response.status !== 200) {
+    console.error('Error while requesting to download ticket.')
+    return {}
   }
   const resblob = await response.blob()
   return { blob: resblob }
@@ -458,4 +515,162 @@ export async function cfSiteverify(token: string): Promise<boolean> {
   })
   const validationResponse = await response.json() as TurnstileServerValidationResponse
   return validationResponse.success
+}
+
+export async function getBookings(org: number): Promise<Booking[]> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/organizations/${org}/bookings`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return []
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return []
+  }
+
+  const { data } = await response.json()
+  return data
+}
+
+export async function getAdmissions(orgId: number): Promise<Admission[]> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/organizations/${orgId}/admissions`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return []
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return []
+  }
+
+  const { data } = await response.json()
+  console.log('[data]:', data);
+  
+  return data
+}
+
+export async function getAdmission(id: number): Promise<Admission | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/admissions/${id}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return null
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return null
+  }
+
+  const { data } = await response.json()
+  console.log('[data]:', data);
+  
+  return data
+}
+
+export async function getOrganizationTickets(org: number): Promise<Ticket[]> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/organizations/${org}/tickets`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return []
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return []
+  }
+
+  const { data } = await response.json()
+  return data
+}
+
+export async function getSoldTickets(org: number): Promise<any> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/organizations/${org}/tickets/sold`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return []
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return []
+  }
+
+  const { data } = await response.json()
+  return data
+}
+
+export async function getTransaction(id: number): Promise<Transaction | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/transactions/${id}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return null
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return null
+  }
+
+  const { data } = await response.json()
+  return data
+}
+
+export async function aboutOrganization({ id, slug }: { id?: number, slug?: string }): Promise<Organization | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const url = new URL(`${process.env.API_HOST}/organizations/about`)
+  if (id) {
+    url.searchParams.set('id', `${id}`)
+  }
+  if (slug) {
+    url.searchParams.set('slug', slug)
+  }
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return null
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return null
+  }
+
+  const { data } = await response.json()
+  return data
 }

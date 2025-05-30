@@ -138,7 +138,7 @@ const data = {
     },
     {
       title: 'Admissions',
-      url: '#',
+      url: '/dashboard/admissions',
       icon: SquareTerminal,
       isActive: true,
       items: [
@@ -154,23 +154,21 @@ const data = {
     },
     {
       title: 'Sales',
-      url: '#',
       icon: Bot,
       items: [
         {
           title: 'Revenue Summary',
-          url: '#',
+          url: '/dashboard//sales/revenue',
         },
       ],
     },
     {
       title: 'Settings',
-      url: '#',
       icon: Settings2,
       items: [
         {
           title: 'General',
-          url: '#',
+          url: '/settings#general',
         },
         {
           title: 'Team',

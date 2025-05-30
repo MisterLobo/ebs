@@ -1,6 +1,6 @@
 "use client"
 
-import * as React from "react"
+import { useEffect, useId, useMemo, useState } from 'react'
 import {
   DndContext,
   KeyboardSensor,
@@ -11,15 +11,15 @@ import {
   useSensors,
   type DragEndEvent,
   type UniqueIdentifier,
-} from "@dnd-kit/core"
-import { restrictToVerticalAxis } from "@dnd-kit/modifiers"
+} from '@dnd-kit/core'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import {
   SortableContext,
   arrayMove,
   useSortable,
   verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -34,7 +34,7 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
-} from "@tanstack/react-table"
+} from '@tanstack/react-table'
 import {
   CheckCircle2Icon,
   ChevronDownIcon,
@@ -48,21 +48,20 @@ import {
   MoreVerticalIcon,
   PlusIcon,
   TrendingUpIcon,
-} from "lucide-react"
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts"
-import { toast } from "sonner"
-import { z } from "zod"
+} from 'lucide-react'
+import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
+import { z } from 'zod'
 
-import { useIsMobile } from "@/hooks/use-mobile"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { useIsMobile } from '@/hooks/use-mobile'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart"
-import { Checkbox } from "@/components/ui/checkbox"
+} from '@/components/ui/chart'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -70,17 +69,16 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+} from '@/components/ui/dropdown-menu'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
+} from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
   SheetClose,
@@ -90,7 +88,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/components/ui/sheet"
+} from '@/components/ui/sheet'
 import {
   Table,
   TableBody,
@@ -98,22 +96,28 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from '@/components/ui/table'
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@/components/ui/tabs"
+} from '@/components/ui/tabs'
+import { useRouter } from 'next/navigation'
+import { format } from 'date-fns'
+import { Admission } from '@/lib/types'
+import { getAdmission } from '@/lib/actions'
 
 export const schema = z.object({
   id: z.number(),
-  header: z.string(),
-  type: z.string(),
-  status: z.string(),
-  target: z.string(),
-  limit: z.string(),
-  reviewer: z.string(),
+  ticket_id: z.number().optional(),
+  booking_id: z.number().optional(),
+  type: z.string().optional(),
+  status: z.string().optional(),
+  created_at: z.string().date().optional(),
+  ticket: z.any().optional(),
+  booking: z.any().optional(),
+  reservation: z.any().optional(),
 })
 
 // Create a separate component for the drag handle
@@ -169,23 +173,36 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     enableHiding: false,
   },
   {
-    accessorKey: "header",
-    header: "Header",
+    accessorKey: "id",
+    header: "ID",
     cell: ({ row }) => {
       return <TableCellViewer item={row.original} />
     },
     enableHiding: false,
   },
   {
-    accessorKey: "type",
-    header: "Section Type",
-    cell: ({ row }) => (
-      <div className="w-32">
-        <Badge variant="outline" className="px-1.5 text-muted-foreground">
-          {row.original.type}
-        </Badge>
-      </div>
-    ),
+    accessorKey: "created_at",
+    header: "Creation Date",
+    cell: ({ row }) => {
+      return <p>{format(new Date(row.original.created_at as string), 'PPP p')}</p>
+    },
+    enableHiding: false,
+  },
+  {
+    accessorKey: "ticket",
+    header: "Ticket",
+    cell: ({ row }) => {
+      return <p>{row.original.reservation.ticket.tier}</p>
+    },
+    enableHiding: false,
+  },
+  {
+    accessorKey: "event",
+    header: "Event",
+    cell: ({ row }) => {
+      return <p>{row.original.reservation.ticket.event.name}</p>
+    },
+    enableHiding: false,
   },
   {
     accessorKey: "status",
@@ -203,89 +220,6 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
         {row.original.status}
       </Badge>
     ),
-  },
-  {
-    accessorKey: "target",
-    header: () => <div className="w-full text-right">Target</div>,
-    cell: ({ row }) => (
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          toast.promise(new Promise((resolve) => setTimeout(resolve, 1000)), {
-            loading: `Saving ${row.original.header}`,
-            success: "Done",
-            error: "Error",
-          })
-        }}
-      >
-        <Label htmlFor={`${row.original.id}-target`} className="sr-only">
-          Target
-        </Label>
-        <Input
-          className="h-8 w-16 border-transparent bg-transparent text-right shadow-none hover:bg-input/30 focus-visible:border focus-visible:bg-background"
-          defaultValue={row.original.target}
-          id={`${row.original.id}-target`}
-        />
-      </form>
-    ),
-  },
-  {
-    accessorKey: "limit",
-    header: () => <div className="w-full text-right">Limit</div>,
-    cell: ({ row }) => (
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          toast.promise(new Promise((resolve) => setTimeout(resolve, 1000)), {
-            loading: `Saving ${row.original.header}`,
-            success: "Done",
-            error: "Error",
-          })
-        }}
-      >
-        <Label htmlFor={`${row.original.id}-limit`} className="sr-only">
-          Limit
-        </Label>
-        <Input
-          className="h-8 w-16 border-transparent bg-transparent text-right shadow-none hover:bg-input/30 focus-visible:border focus-visible:bg-background"
-          defaultValue={row.original.limit}
-          id={`${row.original.id}-limit`}
-        />
-      </form>
-    ),
-  },
-  {
-    accessorKey: "reviewer",
-    header: "Reviewer",
-    cell: ({ row }) => {
-      const isAssigned = row.original.reviewer !== "Assign reviewer"
-
-      if (isAssigned) {
-        return row.original.reviewer
-      }
-
-      return (
-        <>
-          <Label htmlFor={`${row.original.id}-reviewer`} className="sr-only">
-            Reviewer
-          </Label>
-          <Select>
-            <SelectTrigger
-              className="h-8 w-40"
-              id={`${row.original.id}-reviewer`}
-            >
-              <SelectValue placeholder="Assign reviewer" />
-            </SelectTrigger>
-            <SelectContent align="end">
-              <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
-              <SelectItem value="Jamik Tashpulatov">
-                Jamik Tashpulatov
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </>
-      )
-    },
   },
   {
     id: "actions",
@@ -343,26 +277,26 @@ export function DataTable({
 }: {
   data: z.infer<typeof schema>[]
 }) {
-  const [data, setData] = React.useState(() => initialData)
-  const [rowSelection, setRowSelection] = React.useState({})
+  const [data, setData] = useState(() => initialData)
+  const [rowSelection, setRowSelection] = useState({})
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({})
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
+    useState<VisibilityState>({})
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(
     []
   )
-  const [sorting, setSorting] = React.useState<SortingState>([])
-  const [pagination, setPagination] = React.useState({
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [pagination, setPagination] = useState({
     pageIndex: 0,
     pageSize: 10,
   })
-  const sortableId = React.useId()
+  const sortableId = useId()
   const sensors = useSensors(
     useSensor(MouseSensor, {}),
     useSensor(TouchSensor, {}),
     useSensor(KeyboardSensor, {})
   )
 
-  const dataIds = React.useMemo<UniqueIdentifier[]>(
+  const dataIds = useMemo<UniqueIdentifier[]>(
     () => data?.map(({ id }) => id) || [],
     [data]
   )
@@ -405,7 +339,7 @@ export function DataTable({
 
   return (
     <Tabs
-      defaultValue="top-grossing-events"
+      defaultValue="outline"
       className="flex w-full flex-col justify-start gap-6"
     >
       <div className="flex items-center justify-between px-4 lg:px-6">
@@ -420,16 +354,16 @@ export function DataTable({
             <SelectValue placeholder="Select a view" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="top-grossing-events">Top Grossing Events</SelectItem>
-            <SelectItem value="most-tickets-sold">Most Tickets Sold</SelectItem>
-            <SelectItem value="top-most-attended">Top Most Attended</SelectItem>
-            <SelectItem value="top-selling-tickets">Top Selling Tickets</SelectItem>
+            <SelectItem value="outline">Outline</SelectItem>
+            <SelectItem value="past-performance">Past Performance</SelectItem>
+            <SelectItem value="key-personnel">Key Personnel</SelectItem>
+            <SelectItem value="focus-documents">Focus Documents</SelectItem>
           </SelectContent>
         </Select>
         <TabsList className="@4xl/main:flex hidden">
-          <TabsTrigger value="top-grossing-events">Top Grossing Events</TabsTrigger>
-          <TabsTrigger value="most-tickets-sold" className="gap-1">
-            Most Tickets Sold{" "}
+          <TabsTrigger value="outline">Completed</TabsTrigger>
+          <TabsTrigger value="past-performance" className="gap-1">
+            Pending{" "}
             <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -437,8 +371,8 @@ export function DataTable({
               3
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="top-most-attended" className="gap-1">
-            Top Most Attended{" "}
+          <TabsTrigger value="key-personnel" className="gap-1">
+            Canceled{" "}
             <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -446,7 +380,7 @@ export function DataTable({
               2
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="top-selling-tickets">Top Selling Tickets</TabsTrigger>
+          <TabsTrigger value="focus-documents">Expired</TabsTrigger>
         </TabsList>
         <div className="flex items-center gap-2">
           <DropdownMenu>
@@ -489,7 +423,7 @@ export function DataTable({
         </div>
       </div>
       <TabsContent
-        value="top-grossing-events"
+        value="outline"
         className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
       >
         <div className="overflow-hidden rounded-lg border">
@@ -622,16 +556,16 @@ export function DataTable({
         </div>
       </TabsContent>
       <TabsContent
-        value="most-tickets-sold"
+        value="past-performance"
         className="flex flex-col px-4 lg:px-6"
       >
         <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
       </TabsContent>
-      <TabsContent value="top-most-attended" className="flex flex-col px-4 lg:px-6">
+      <TabsContent value="key-personnel" className="flex flex-col px-4 lg:px-6">
         <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
       </TabsContent>
       <TabsContent
-        value="top-selling-tickets"
+        value="focus-documents"
         className="flex flex-col px-4 lg:px-6"
       >
         <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
@@ -661,18 +595,26 @@ const chartConfig = {
 } satisfies ChartConfig
 
 function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
+  const router = useRouter()
   const isMobile = useIsMobile()
+  const [data, setData] = useState<Admission | null>(null)
+
+  useEffect(() => {
+    if (item.id) {
+      getAdmission(item.id).then(adm => setData(adm))
+    }
+  }, [item.id])
 
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="link" className="w-fit px-0 text-left text-foreground">
-          {item.header}
+        <Button variant="link" className="w-fit px-0 text-left text-foreground cursor-pointer">
+          {item.id}
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="flex flex-col">
         <SheetHeader className="gap-1">
-          <SheetTitle>{item.header}</SheetTitle>
+          <SheetTitle>{data?.reservation?.ticket?.tier ?? '-'}</SheetTitle>
           <SheetDescription>
             Showing total visitors for the last 6 months
           </SheetDescription>
@@ -737,79 +679,23 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
           )}
           <form className="flex flex-col gap-4">
             <div className="flex flex-col gap-3">
-              <Label htmlFor="header">Header</Label>
-              <Input id="header" defaultValue={item.header} />
+              <Label htmlFor="header">Creation Date</Label>
+              <p>{item.created_at}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-3">
                 <Label htmlFor="type">Type</Label>
-                <Select defaultValue={item.type}>
-                  <SelectTrigger id="type" className="w-full">
-                    <SelectValue placeholder="Select a type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Table of Contents">
-                      Table of Contents
-                    </SelectItem>
-                    <SelectItem value="Executive Summary">
-                      Executive Summary
-                    </SelectItem>
-                    <SelectItem value="Technical Approach">
-                      Technical Approach
-                    </SelectItem>
-                    <SelectItem value="Design">Design</SelectItem>
-                    <SelectItem value="Capabilities">Capabilities</SelectItem>
-                    <SelectItem value="Focus Documents">
-                      Focus Documents
-                    </SelectItem>
-                    <SelectItem value="Narrative">Narrative</SelectItem>
-                    <SelectItem value="Cover Page">Cover Page</SelectItem>
-                  </SelectContent>
-                </Select>
+                <p>{item.type}</p>
               </div>
               <div className="flex flex-col gap-3">
                 <Label htmlFor="status">Status</Label>
-                <Select defaultValue={item.status}>
-                  <SelectTrigger id="status" className="w-full">
-                    <SelectValue placeholder="Select a status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Done">Done</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Not Started">Not Started</SelectItem>
-                  </SelectContent>
-                </Select>
+                <p>{item.status}</p>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="target">Target</Label>
-                <Input id="target" defaultValue={item.target} />
-              </div>
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="limit">Limit</Label>
-                <Input id="limit" defaultValue={item.limit} />
-              </div>
-            </div>
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="reviewer">Reviewer</Label>
-              <Select defaultValue={item.reviewer}>
-                <SelectTrigger id="reviewer" className="w-full">
-                  <SelectValue placeholder="Select a reviewer" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
-                  <SelectItem value="Jamik Tashpulatov">
-                    Jamik Tashpulatov
-                  </SelectItem>
-                  <SelectItem value="Emily Whalen">Emily Whalen</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </form>
         </div>
         <SheetFooter className="mt-auto flex gap-2 sm:flex-col sm:space-x-0">
-          <Button className="w-full">Submit</Button>
+          <Button className="w-full" onClick={() => router.push(`/dashboard/events/${item.id}`)}>Details</Button>
           <SheetClose asChild>
             <Button variant="outline" className="w-full">
               Done

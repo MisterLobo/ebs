@@ -4,7 +4,7 @@ type Timestamps = {
   deleted_at?: string,
 }
 
-type EventStatus = 'draft' | 'open' | 'notify' | 'closed' | 'archived'
+type EventStatus = 'draft' | 'open' | 'notify' | 'closed' | 'archived' | 'registration' | 'admission'
 
 export type NewOrganizationRequestPayload = {
   name?: string,
@@ -59,9 +59,13 @@ export type Organization = {
   owner_id?: number,
   stripe_account_id?: string,
   metadata?: Metadata,
-  contact_email?: string,
+  email?: string,
   connect_onboarding_url?: string,
   status?: string,
+  verified?: boolean,
+  payment_verified?: boolean,
+  slug?: string,
+  about?: string,
 
   events?: Event[],
   owner?: User,
@@ -75,12 +79,13 @@ export type Event = {
   location?: string,
   date_time?: string,
   status?: EventStatus,
-  organizer_id?: number,
+  organizer?: number,
   seats?: number,
   created_by?: number,
   opens_at?: string,
   deadline?: string,
   mode?: 'default' | 'scheduled',
+  organization?: Organization,
 } & Timestamps
 
 export type Ticket = {
@@ -122,12 +127,17 @@ export type Booking = {
   user_id?: number,
   event_id?: number,
   event?: Event,
-  user?: any,
+  user?: User,
+  txn_id?: string,
   reserved_tickets?: Ticket[],
   reservations?: Reservation[],
   checkout_session_id?: string,
   payment_intent_id?: string,
   metadata?: Metadata,
+  ticket?: Ticket,
+  txn?: Transaction,
+  slots_wanted?: number,
+  slots_taken?: number,
 } & Timestamps
 
 export type Reservation = {
@@ -137,6 +147,29 @@ export type Reservation = {
   valid_until?: string,
   ticket?: Ticket,
   booking?: Booking,
+  status?:string,
+} & Timestamps
+
+export type Transaction = {
+  id?: string,
+  currency?: string,
+  amount?: number,
+  source_name?: string,
+  source_value?: string,
+  reference_id?: string,
+  metadata?: Metadata,
+  checkout_session_id?: string,
+  payment_intent_id?: string,
+  status?: string,
+} & Timestamps
+
+export type Admission = {
+  id: number,
+  by?: number,
+  reservation_id?: number,
+  type?: string,
+  status?: string,
+  reservation?: Reservation,
 } & Timestamps
 
 export type EventQueryFilters = {
@@ -147,6 +180,7 @@ export type EventQueryFilters = {
   created_at?: string,
   created_before?: string,
   created_after?: string,
+  public?: string,
 }
 
 export type Waitlist = {

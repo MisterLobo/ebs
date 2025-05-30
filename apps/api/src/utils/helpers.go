@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/google/uuid"
+	"github.com/gosimple/slug"
 	"github.com/stripe/stripe-go/v82"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -79,12 +80,12 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 			deadline.Location(),
 		)
 		log.Printf("dateTime: Local=%s", deadline.String())
+		event.Deadline = deadline
 		if params.OpensAt != nil {
 			opensAt, err := time.Parse(config.TIME_PARSE_FORMAT, *params.OpensAt)
 			if err != nil {
 				return err
 			}
-			event.Deadline = deadline
 			if params.Mode == "scheduled" {
 				event.OpensAt = &opensAt
 				event.Status = types.EVENT_TICKETS_NOTIFY
@@ -103,11 +104,7 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 		if err != nil {
 			return err
 		}
-		if org.Type == "personal" {
-			err := errors.New("Only allowed in standard organizations")
-			return err
-		}
-		if org.Type != "standard" {
+		if org.Type != types.ORG_STANDARD && org.Type != types.ORG_PERSONAL {
 			err := errors.New("Not enough permissions to perform this action")
 			return err
 		}
@@ -337,7 +334,9 @@ func CreateNewOrganization(params *types.CreateOrganizationRequestBody) (uint, e
 		OwnerID:      params.OwnerID,
 		ContactEmail: params.ContactEmail,
 		Type:         params.Type,
+		Slug:         slug.Make(params.Name),
 	}
+
 	db := db.GetDb()
 	err := db.Transaction(func(tx *gorm.DB) error {
 		err := tx.Create(&organization).Error
@@ -483,16 +482,46 @@ func DeleteTicket(id uint) error {
 	return err
 }
 
-func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csURL string, csID *string, requestId *uuid.UUID) ([]uint, error) {
+func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csURL string, txId *string, csID *string, requestId *uuid.UUID) ([]uint, []string, error) {
 	metadata := types.JSONB{
 		"requestId": requestId.String(),
 	}
+	log.Printf("[metadata]: %v; %d items\n", metadata, len(params.Items))
 	db := db.GetDb()
 	reservationIDs := []uint{}
 	errors := make([]string, 0)
 	now := time.Now()
 	expirationTime := now.Add(1 * time.Hour)
+	// rd := lib.GetRedisClient()
 	err := db.Transaction(func(tx *gorm.DB) error {
+		/* txn := models.Transaction{
+			Status:      types.TRANSACTION_PENDING,
+			ReferenceID: requestId.String(),
+		}
+		err := tx.Create(&txn).Error
+		if err != nil {
+			return err
+		} */
+		/* val, err := rd.Get(context.Background(), requestId.String()).Result()
+		if err != nil {
+			log.Printf("Error retrieving cache value: %s\n", err.Error())
+			return err
+		} */
+		txnId, err := uuid.Parse(*txId)
+		if err != nil {
+			log.Printf("Error parsing value: %s\n", err.Error())
+			return err
+		}
+		log.Printf("[txnId]: %v", txnId)
+		var txn models.Transaction
+		if err = tx.
+			Model(&models.Transaction{}).
+			Where(&models.Transaction{ID: txnId}).
+			First(&txn).
+			Error; err != nil {
+			log.Printf("Transaction not found [%s]: %s\n", txnId.String(), err.Error())
+			return err
+		}
 		for _, v := range params.Items {
 			var ticket models.Ticket
 			err := tx.Where(&models.Ticket{ID: v.TicketID}).First(&ticket).Error
@@ -504,12 +533,14 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				Model(&models.Reservation{}).
 				Select("COUNT(id)").
 				Where(clause.IN{Column: "status", Values: []any{types.RESERVATION_PENDING, types.RESERVATION_COMPLETED}}).
+				Where("valid_until > ?", time.Now()).
 				Where(&models.Reservation{TicketID: v.TicketID}).
 				Count(&count).
 				Error
 			if err != nil {
 				return err
 			}
+			log.Println("CHECK 1")
 			slotsLeft := ticket.Limit - uint(count)
 			slots := slotsLeft - uint(v.Qty)
 			slotsToTake := 0
@@ -519,9 +550,11 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 
 			if slotsToTake == 0 {
 				err := fmt.Errorf("Ticket [%s] has no more slots available", ticket.Tier)
+				log.Println(err)
 				errors = append(errors, err.Error())
 				continue
 			}
+			log.Println("CHECK 2")
 
 			metadata["slots_wanted"] = v.Qty
 			metadata["slots_taken"] = slotsToTake
@@ -530,13 +563,18 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				TicketID:          v.TicketID,
 				Qty:               v.Qty,
 				Subtotal:          subtotal,
-				Status:            string(types.BOOKING_PENDING),
+				Status:            types.BOOKING_PENDING,
 				Currency:          "usd",
 				UserID:            userId,
 				EventID:           ticket.EventID,
 				Metadata:          &metadata,
 				CheckoutSessionId: csID,
+				TransactionID:     &txnId,
+				SlotsWanted:       uint(v.Qty),
+				SlotsTaken:        uint(slotsToTake),
 			}
+			log.Println("CHECK 3")
+			log.Printf("New Booking: %v\n", r)
 			err = tx.Create(&r).Error
 			if err != nil {
 				err = fmt.Errorf("error in Booking transaction: %s\n", err.Error())
@@ -544,6 +582,7 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				return err
 			}
 			bookingId := r.ID
+			log.Printf("[%s] New Booking: %d\n", txnId, bookingId)
 
 			reservationIDs = append(reservationIDs, r.ID)
 			runsAt := expirationTime
@@ -600,12 +639,8 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				return err
 			}
 		}
-		txn := models.Transaction{
-			Status:      types.TRANSACTION_PENDING,
-			ReferenceID: requestId.String(),
-		}
-		err := tx.Create(&txn).Error
-		if err != nil {
+		if len(errors) > 0 {
+			err := fmt.Errorf("There were [%d] errors while adding Booking records", len(errors))
 			return err
 		}
 
@@ -613,10 +648,10 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 	})
 	if err != nil {
 		log.Printf("CreateReservation failed: %s\n", err.Error())
-		return []uint{}, err
+		return []uint{}, errors, err
 	}
 
-	return reservationIDs, nil
+	return reservationIDs, nil, nil
 }
 
 func GetOrgReservations(id uint) ([]models.Booking, error) {
@@ -631,22 +666,26 @@ func GetOwnReservations(id uint) ([]models.Booking, error) {
 	err := db.
 		Model(&models.Booking{}).
 		Where(&models.Booking{UserID: id}).
-		Preload("User").
+		Not(&models.Booking{TransactionID: &uuid.Nil}).
 		Preload("Event").
 		Preload("Tickets").
+		Preload("Transaction").
 		Order("created_at DESC").
 		Find(&bookings).
 		Error
 	return bookings, err
 }
 
-func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[string]string) (*string, *string, error) {
+func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[string]string) (*string, *string, *string, error) {
 	sc := lib.GetStripeClient()
 	successUrl := fmt.Sprintf("%s/checkout/callback/success", os.Getenv("APP_HOST"))
 	piParams := &stripe.CheckoutSessionCreatePaymentIntentDataParams{}
+	meta := types.Metadata{}
 	for k, v := range metadata {
 		piParams.AddMetadata(k, v)
+		meta[k] = v
 	}
+	log.Printf("[meta]: %v\n", meta)
 	createParams := stripe.CheckoutSessionCreateParams{
 		SuccessURL:        stripe.String(successUrl),
 		UIMode:            stripe.String("hosted"),
@@ -699,19 +738,46 @@ func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[s
 	})
 	if err != nil {
 		log.Printf("CreateStripeCheckout failed: %s\n", err.Error())
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	log.Println("TEST 2")
 	createParams.LineItems = lineItems
-	log.Println("txn done:", len(lineItems))
 	checkoutSession, err := sc.V1CheckoutSessions.Create(context.Background(), &createParams)
 	if err != nil {
 		log.Printf("CreateStripeCheckout failed: %s\n", err.Error())
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	log.Printf("CheckoutSessionID: %s\n", checkoutSession.ID)
+	requestId := metadata["requestId"]
+	var txnId string
+	err = db.Transaction(func(tx *gorm.DB) error {
+		txn := &models.Transaction{
+			Amount:            float64(checkoutSession.AmountTotal),
+			Currency:          string(checkoutSession.Currency),
+			CheckoutSessionId: &checkoutSession.ID,
+			Status:            types.TRANSACTION_PENDING,
+			ReferenceID:       requestId,
+			SourceName:        "table",
+			SourceValue:       "Booking",
+			// Metadata:          &meta,
+		}
+		err := tx.Create(txn).Error
+		if err != nil {
+			return err
+		}
+		txnId = txn.ID.String()
+		return nil
+	})
+	if err != nil {
+		log.Printf("Error while creating Transaction: %s\n", err.Error())
+		return nil, nil, nil, err
+	}
+	rd := lib.GetRedisClient()
+	_, err = rd.SetEx(context.Background(), requestId, txnId, 10*time.Minute).Result()
+	if err != nil {
+		log.Printf("Error caching value [%s]: %s\n", txnId, err.Error())
+	}
 
-	return &checkoutSession.URL, &checkoutSession.ID, nil
+	return &checkoutSession.URL, &checkoutSession.ID, &txnId, nil
 }
 
 func UpdateEventStatus(id uint, newStatus types.EventStatus, oldStatus types.EventStatus) error {

@@ -2,6 +2,8 @@ package lib
 
 import (
 	"context"
+	"ebs/src/types"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -97,4 +99,142 @@ func CreateSchedule(name string, startDate time.Time, scheduleExpression string,
 	}
 	log.Printf("Created schedule at: %s\n", *sched.ScheduleArn)
 	return &sid, nil
+}
+
+func CreateCronSchedule(clientId, topic string, startDate time.Time, scheduleExpression string, payload types.JSONB) {
+	s, err := GetScheduler()
+	if err != nil {
+		log.Printf("Error initializing Scheduler client: %s\n", err.Error())
+		return
+	}
+	j, err := s.NewJob(
+		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(startDate)),
+		gocron.NewTask(func(id uint) {
+			KafkaProduceMessage(clientId, topic, &payload)
+		}, 1),
+	)
+	if err != nil {
+		log.Printf("Error creating job: %s\n", err.Error())
+		return
+	}
+	log.Printf("New Job: %s\n", j.ID().String())
+}
+
+type Scheduler interface {
+	Name() string
+	CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB, fn *types.KafkaTaskHandler) (*uuid.UUID, error)
+}
+
+type EventBridgeScheduler struct {
+	inner *awsched.Client
+}
+
+func (e *EventBridgeScheduler) Name() string {
+	return "EventBridge"
+}
+
+func (e *EventBridgeScheduler) CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB, fn *types.KafkaTaskHandler) (*uuid.UUID, error) {
+	name := ctx.Value("name").(string)
+	topic := ctx.Value("topic").(string)
+	in := *e.inner
+	bPayload, _ := json.Marshal(p)
+	input := string(bPayload)
+	sid := uuid.New()
+	roleArn := os.Getenv("SCHEDULER_ROLE_ARN")
+	topicArn := GetTopicArn(topic)
+	sRunsAt := s.Format("2006-01-02T15:04:05")
+	sched, err := in.CreateSchedule(context.TODO(), &awsched.CreateScheduleInput{
+		Name:      aws.String(fmt.Sprintf("schedule_%s", name)),
+		StartDate: aws.Time(s),
+		Target: &schedulerTypes.Target{
+			Arn:     aws.String(topicArn),
+			RoleArn: aws.String(roleArn),
+			Input:   aws.String(input),
+			RetryPolicy: &schedulerTypes.RetryPolicy{
+				MaximumRetryAttempts: aws.Int32(3),
+			},
+		},
+		FlexibleTimeWindow:    &schedulerTypes.FlexibleTimeWindow{Mode: schedulerTypes.FlexibleTimeWindowModeOff},
+		ScheduleExpression:    aws.String(fmt.Sprintf("at(%s)", sRunsAt)),
+		ActionAfterCompletion: schedulerTypes.ActionAfterCompletionDelete,
+	})
+	if err != nil {
+		log.Printf("Failed to create Schedule: %s\n", err.Error())
+		return nil, err
+	}
+	log.Printf("Created schedule at: %s\n", *sched.ScheduleArn)
+	return &sid, nil
+}
+
+type LocalScheduler struct {
+	inner *gocron.Scheduler
+}
+
+func (l *LocalScheduler) Name() string {
+	return "Local"
+}
+func (l *LocalScheduler) CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB, fn *types.KafkaTaskHandler) (*uuid.UUID, error) {
+	in := *l.inner
+	j, err := in.NewJob(
+		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(s)),
+		gocron.NewTask(func(ctx context.Context, p types.JSONB) {
+			log.Println("[LOCALSCHEDULER] Running scheduled task...")
+			KafkaTaskHandlerFunc(&ctx, &p)
+		}, ctx, p),
+	)
+	if err != nil {
+		log.Printf("Error creating job: %s\n", err.Error())
+		return nil, err
+	}
+	sRunsAt := s.Format("2006-01-02T15:04:05")
+	log.Printf("[LOCALSCHEDULER] New Job scheduled on: %s %s\n", j.ID().String(), sRunsAt)
+	jid := j.ID()
+	return &jid, nil
+}
+
+func NewAwsScheduler() *EventBridgeScheduler {
+	inner := AWSGetSchedulerClient()
+	s := EventBridgeScheduler{inner: inner}
+	return &s
+}
+
+func NewLocalScheduler() *LocalScheduler {
+	inner, _ := GetScheduler()
+	s := LocalScheduler{inner: &inner}
+	return &s
+}
+
+// CreateScheduler returns either an instance of LocalScheduler or EventBridgeScheduler based on the app environment value
+func CreateScheduler() Scheduler {
+	env := os.Getenv("APP_ENV")
+	if env != "local" {
+		ebs := NewAwsScheduler()
+		return ebs
+	}
+	local := NewLocalScheduler()
+	return local
+}
+
+// Wrapper for creating scheduled job based on the app environment. local will use the LocalScheduler otherwise will use AWS EventBridge Scheduler
+func NewScheduledJob(startDate time.Time, vars map[string]string, p types.JSONB) (*uuid.UUID, error) {
+	sch := CreateScheduler()
+	ctx := context.Background()
+	for k, v := range vars {
+		ctx = context.WithValue(ctx, k, v)
+	}
+	log.Printf("Created scheduler with name: %s\n", sch.Name())
+
+	var h types.KafkaTaskHandler = KafkaTaskHandlerFunc
+	sid, err := sch.CreateScheduleWithStartDate(ctx, startDate, p, &h)
+	if err != nil {
+		return nil, err
+	}
+	return sid, nil
+}
+
+func KafkaTaskHandlerFunc(ctx *context.Context, p *types.JSONB) {
+	cx := *ctx
+	clientId := cx.Value("clientId").(string)
+	topic := cx.Value("topic").(string)
+	go KafkaProduceMessage(clientId, topic, p)
 }

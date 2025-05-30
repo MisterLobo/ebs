@@ -4,6 +4,7 @@ import (
 	"context"
 	"ebs/src/lib"
 	"ebs/src/types"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -16,7 +17,7 @@ type User struct {
 	ID               uint            `gorm:"primarykey" json:"id"`
 	Name             string          `json:"name,omitempty"`
 	Email            string          `json:"email,omitempty"`
-	Role             string          `json:"role,omitempty"`
+	Role             types.UserRole  `json:"role,omitempty"`
 	UID              string          `json:"uid,omitempty"`
 	ActiveOrg        uint            `json:"active_org,omitempty"`
 	EmailVerified    bool            `json:"email_verified,omitempty"`
@@ -24,32 +25,41 @@ type User struct {
 	VerifiedAt       *time.Time      `json:"verified_at,omitempty"`
 	StripeAccountId  *string         `json:"-"`
 	StripeCustomerId *string         `json:"-"`
-	Metadata         *types.Metadata `gorm:"type:jsonb"`
+	Metadata         *types.Metadata `gorm:"type:jsonb" json:"metadata,omitempty"`
 	LastActive       *time.Time      `json:"last_active,omitempty"`
 
 	Bookings      []Booking            `gorm:"foreignKey:user_id" json:"bookings,omitempty"`
 	Organizations []Organization       `gorm:"foreignKey:owner_id" json:"organizations,omitempty"`
 	Subscriptions []*EventSubscription `gorm:"many2many:event_subscriptions;" json:"subscriptions,omitempty"`
+	Teams         []Team               `gorm:"many2many:team_members;" json:"teams,omitempty"`
 
 	types.Timestamps
 }
 
-func (u *User) AfterCreate(tx *gorm.DB) error {
-	s := lib.GetStripeClient()
-	seq := s.V1Customers.Search(context.Background(), &stripe.CustomerSearchParams{
-		SearchParams: stripe.SearchParams{
-			Context: context.Background(),
-			Query:   fmt.Sprintf("email:\"%s\"", u.Email),
-		},
-	})
-	if seq != nil {
-		for cus, err := range seq {
-			if err != nil {
-				log.Printf("Error retrieving customer information: %s\n", err.Error())
-				continue
-			}
-			log.Printf("Customer: %s (%s)\n", cus.Email, cus.ID)
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+	var user User
+	if err := tx.Where("email = ?", u.Email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
 		}
 	}
+	return fmt.Errorf("User with email %s already exists", u.Email)
+}
+
+func (u *User) AfterCreate(tx *gorm.DB) error {
+	go func() {
+		s := lib.GetStripeClient()
+		_, err := s.V1Customers.Create(context.Background(), &stripe.CustomerCreateParams{
+			Email: stripe.String(u.Email),
+			Name:  stripe.String(u.Name),
+			Metadata: map[string]string{
+				"id": fmt.Sprint(u.ID),
+			},
+		})
+		if err != nil {
+			log.Printf("Error creating Customer account: %s\n", err.Error())
+			return
+		}
+	}()
 	return nil
 }

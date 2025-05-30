@@ -1,6 +1,7 @@
 package models
 
 import (
+	"ebs/src/types"
 	"time"
 )
 
@@ -14,4 +15,6 @@ type Reservation struct {
 
 	Ticket  Ticket  `json:"ticket,omitempty"`
 	Booking Booking `json:"booking,omitempty"`
+
+	types.Timestamps
 }

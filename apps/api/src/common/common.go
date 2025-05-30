@@ -16,10 +16,6 @@ func SQSConsumers() {
 		log.Println("DLQ: message received")
 	})
 	dlq.Listen()
-	z := awslib.NewSQSConsumer("Z", func(payload string) {
-		log.Println("Z: message received")
-	})
-	z.Listen()
 	pr := awslib.NewSQSConsumer("PendingReservations", func(payload string) {
 		log.Println("PendingReservations: message received")
 	})
@@ -37,6 +33,7 @@ func SQSConsumers() {
 	go EventsToCloseConsumer()
 	go EventsToCompleteConsumer()
 	go PendingTransactionsConsumer()
+	go PaymentTransactionUpdatesConsumer()
 
 	c := lib.AWSGetSQSClient()
 	qurl, err := c.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{

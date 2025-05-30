@@ -35,6 +35,11 @@ func InitDb() *gorm.DB {
 		&models.EventSubscription{},
 		&models.JobTask{},
 		&models.Setting{},
+		&models.Team{},
+		&models.TeamMember{},
+		&models.Role{},
+		&models.Permission{},
+		&models.RolePermission{},
 	)
 	if err != nil {
 		log.Fatalf("error migration: %s", err.Error())
@@ -44,12 +49,19 @@ func InitDb() *gorm.DB {
 }
 
 func InitBroker() {
+	go common.UpdateMissingSlugs()
 	go RecoverQueuedJobs()
 	go UpdateExpiredJobs()
-	go UpdateExpiredBookings()
-	// lib.KafkaConsumer("footest")
+	go StatusUpdateExpiredBookings()
+	var h1 types.Handler = common.KafkaEventsToOpenConsumer
+	go lib.KafkaConsumer("events", "EventsToOpen", &h1)
+	var h2 types.Handler = common.KafkaEventsToCloseConsumer
+	go lib.KafkaConsumer("events", "EventsToClose", &h2)
+	var h3 types.Handler = common.KafkaEventsToCompleteConsumer
+	go lib.KafkaConsumer("events", "EventsToComplete", &h3)
+	// go lib.KafkaConsumers("events", "EventsToOpen", "EventsToClose", "EventsToComplete")
 	// lib.KafkaProducer("asdf")
-	go lib.KafkaCreateTopics("events-open", "events-close")
+	go lib.KafkaCreateTopics("events-open", "events-close", "EventsToOpen", "EventsToClose", "EventsToComplete")
 	go lib.TestRedis()
 	// go common.EventsOpenConsumer()
 
@@ -66,6 +78,7 @@ func InitQueues() {
 	lib.SQSCreateQueue("PendingTransactions")
 	lib.SQSCreateQueue("PaymentsProcessing")
 	lib.SQSCreateQueue("ExpiredBookings")
+	lib.SQSCreateQueue("PaymentTransactionUpdates")
 }
 func InitTopics() {
 	// lib.SNSCreateTopic("ExpiredBookings")
@@ -149,7 +162,7 @@ func RecoverQueuedJobs() error {
 		jobDef := gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(jobTask.RunsAt))
 		jt := gocron.NewTask(func() {
 			log.Println("Running scheduled task")
-			err := lib.KafkaProduceMessage(jobTask.Payload["producerClientId"].(string), jobTask.Payload["topic"].(string), jobTask.Payload)
+			err := lib.KafkaProduceMessage(jobTask.Payload["producerClientId"].(string), jobTask.Payload["topic"].(string), &jobTask.Payload)
 			if err != nil {
 				log.Printf("Error on producting message: %s\n", err.Error())
 				return
@@ -187,30 +200,50 @@ func UpdateExpiredJobs() {
 	}
 }
 
-func UpdateExpiredBookings() {
+func StatusUpdateExpiredBookings() {
 	db := db.GetDb()
 	err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.Event{}).
-			Where("date_time < ?", time.Now()).
-			Where("status IN (?)", []string{"notify", "draft"}).
-			Update("status", types.EVENT_EXPIRED).
-			Error; err != nil {
-			return err
-		}
 		var eventIDs []uint
 		if err := tx.
 			Model(&models.Event{}).
-			Where("status", types.EVENT_TICKETS_NOTIFY).
-			Where("date_time < ?", time.Now()).
+			Where("status IN (?)", []string{string(types.EVENT_TICKETS_NOTIFY)}).
+			Where(tx.
+				Where("date_time < ?", time.Now()).
+				Or("opens_at < ?", time.Now()).
+				Or("deadline < ?", time.Now()),
+			).
 			Select("id").
 			Pluck("id", &eventIDs).
 			Error; err != nil {
 			return err
 		}
+		log.Printf("[CONSUMER]: Found %d Events overdue\n", len(eventIDs))
+		if err := tx.Model(&models.Event{}).
+			Where("id IN (?)", eventIDs).
+			Update("status", types.EVENT_EXPIRED).
+			Error; err != nil {
+			return err
+		}
+		var bids []uint
 		if err := tx.
 			Model(&models.Booking{}).
 			Where("event_id IN (?)", eventIDs).
+			Select("id").
+			Pluck("id", &bids).
+			Error; err != nil {
+			return err
+		}
+		if err := tx.
+			Model(&models.Booking{}).
+			Where("id IN (?)", bids).
 			Update("status", types.BOOKING_EXPIRED).
+			Error; err != nil {
+			return err
+		}
+		if err := tx.
+			Model(&models.Reservation{}).
+			Where("booking_id IN (?)", bids).
+			Update("status", "expired").
 			Error; err != nil {
 			return err
 		}

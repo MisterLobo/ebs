@@ -15,7 +15,7 @@ type Transaction struct {
 	SourceValue       string                  `json:"source_value,omitempty"`
 	ReferenceID       string                  `json:"reference_id,omitempty"`
 	Status            types.TransactionStatus `gorm:"pending" json:"status,omitempty"`
-	Metadata          types.JSONB             `json:"metadata,omitempty"`
+	Metadata          *types.Metadata         `gorm:"type:jsonb" json:"metadata,omitempty"`
 	CheckoutSessionId *string                 `json:"checkout_session_id,omitempty"`
 	PaymentIntentId   *string                 `json:"payment_intent_id,omitempty"`
 

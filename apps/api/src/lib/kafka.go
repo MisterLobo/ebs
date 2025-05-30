@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"ebs/src/types"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -26,7 +27,7 @@ func GetKafkaConsumerConfig() kafka.ConfigMap {
 	}
 }
 
-func KafkaConsumer(groupId string) {
+func KafkaConsumers(groupId string, topics ...string) {
 	log.Println("Initializing kafka Consumer...")
 	master, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": os.Getenv("KAFKA_BROKER"),
@@ -38,7 +39,10 @@ func KafkaConsumer(groupId string) {
 		log.Printf("Error on master: %s\n", err.Error())
 		return
 	}
-	err = master.SubscribeTopics([]string{"topic3"}, nil)
+	err = master.SubscribeTopics(topics, func(c *kafka.Consumer, e kafka.Event) error {
+		log.Println("[KAFKA] Consumer rebalancing...")
+		return nil
+	})
 	if err != nil {
 		log.Printf("Error on consumer: %s\n", err.Error())
 		return
@@ -51,6 +55,48 @@ func KafkaConsumer(groupId string) {
 			switch e := ev.(type) {
 			case *kafka.Message:
 				log.Printf("message received: %s\n", string(e.Value))
+				break
+			case kafka.Error:
+				fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
+				run = false
+			default:
+				break
+			}
+		}
+		master.Close()
+	}()
+}
+
+func KafkaConsumer(groupId string, topic string, fn *types.Handler) {
+	log.Println("Initializing kafka Consumer...")
+	master, err := kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers": os.Getenv("KAFKA_BROKER"),
+		"group.id":          groupId,
+		"auto.offset.reset": "smallest",
+	})
+
+	if err != nil {
+		log.Printf("Error on master: %s\n", err.Error())
+		return
+	}
+	err = master.SubscribeTopics([]string{topic}, func(c *kafka.Consumer, e kafka.Event) error {
+		log.Printf("[KAFKA:%s] Consumer rebalancing...\n", topic)
+		return nil
+	})
+	if err != nil {
+		log.Printf("Error on consumer: %s\n", err.Error())
+		return
+	}
+	go func() {
+		log.Println("[BACKGROUND]: waiting for messages...")
+		run := true
+		for run == true {
+			ev := master.Poll(100)
+			switch e := ev.(type) {
+			case *kafka.Message:
+				log.Printf("message received: %s\n", string(e.Value))
+				h := *fn
+				h(string(e.Value))
 				break
 			case kafka.Error:
 				fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
@@ -85,7 +131,7 @@ func KafkaProducer(clientId string) {
 	}, nil)
 }
 
-func KafkaProduceMessage(clientId string, topic string, payload map[string]any) error {
+func KafkaProduceMessage(clientId, topic string, payload *types.JSONB) error {
 	log.Println("STEP 1: Create producer")
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
 		"bootstrap.servers": os.Getenv("KAFKA_BROKER"),
@@ -99,7 +145,7 @@ func KafkaProduceMessage(clientId string, topic string, payload map[string]any) 
 	log.Println("1st step PASS")
 
 	log.Println("STEP 2: Processing payload")
-	value, err := json.Marshal(payload)
+	value, err := json.Marshal(*payload)
 	if err != nil {
 		log.Printf("Error on 2nd step: %s\n", err.Error())
 		return err

@@ -1,12 +1,14 @@
 package types
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -15,12 +17,14 @@ type Timestamps struct {
 	UpdatedAt time.Time      `gorm:"autoUpdateTime:nano" json:"updated_at,omitempty"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty,omitnil"`
 }
-
+type JSON map[string]any
 type JSONB map[string]any
 type JSONBArray []any
 type JSONBAny struct {
 	Inner any
 }
+
+type KafkaTaskHandler func(ctx *context.Context, p *JSONB)
 
 func (a JSONB) Value() (driver.Value, error) {
 	valueString, err := json.Marshal(a)
@@ -110,12 +114,12 @@ type CreateTicketRequestBody struct {
 }
 
 type CreateOrganizationRequestBody struct {
-	Name         string `json:"name" binding:"required"`
-	About        string `json:"about,omitempty"`
-	Country      string `json:"country,omitempty"`
-	OwnerID      uint   `json:"owner" binding:"required"`
-	ContactEmail string `json:"email" binding:"required"`
-	Type         string `json:"type,omitempty"`
+	Name         string           `json:"name" binding:"required"`
+	About        string           `json:"about,omitempty"`
+	Country      string           `json:"country,omitempty"`
+	OwnerID      uint             `json:"owner" binding:"required"`
+	ContactEmail string           `json:"email" binding:"required"`
+	Type         OrganizationType `json:"type,omitempty"`
 }
 
 type ReservationTicket struct {
@@ -125,6 +129,22 @@ type ReservationTicket struct {
 
 type SimpleRequestParams struct {
 	ID uint `uri:"id" binding:"required"`
+}
+
+type SimpleTransactionRequestParams struct {
+	ID *uuid.UUID `uri:"id" binding:"required"`
+}
+type SimpleTransactionRequestBody struct {
+	ID         *uuid.UUID `json:"id" binding:"required"`
+	CheckoutID string     `json:"checkout_id" binding:"required"`
+}
+
+type SimpleOrganizationRequestParams struct {
+	ID uint `uri:"orgId" binding:"required"`
+}
+
+type OrganizationBookingsQueryParams struct {
+	EventID *uint `form:"event_id"`
 }
 
 type CreateBookingRequestBody struct {
@@ -138,6 +158,19 @@ type RegisterUserRequestBody struct {
 type CreateAdmissionRequestBody struct {
 	ReservationID uint   `json:"reservation_id"`
 	Code          string `json:"code" binding:"required"`
+}
+
+type CancelBookingsRequestBodyType string
+
+const (
+	Transaction CancelBookingsRequestBodyType = "transaction"
+	Reservation CancelBookingsRequestBodyType = "reservation"
+)
+
+type CancelBookingsRequestBody struct {
+	IDs   []uint                        `json:"ids"`
+	TxnID string                        `json:"txn_id"`
+	Type  CancelBookingsRequestBodyType `json:"type" binding:"required"`
 }
 
 type Status string
@@ -154,12 +187,14 @@ type EventStatus string
 const (
 	EVENT_DRAFT          EventStatus = "draft"
 	EVENT_TICKETS_NOTIFY EventStatus = "notify"
-	EVENT_TICKETS_OPEN   EventStatus = "open"
-	EVENT_TICKETS_CLOSED EventStatus = "closed"
+	EVENT_OPEN           EventStatus = "open"
+	EVENT_CLOSED         EventStatus = "closed"
 	EVENT_COMPLETED      EventStatus = "completed"
 	EVENT_EXPIRED        EventStatus = "expired"
 	EVENT_CANCELED       EventStatus = "canceled"
 	EVENT_ARCHIVED       EventStatus = "archived"
+	EVENT_REGISTRATION   EventStatus = "registration"
+	EVENT_ADMISSION      EventStatus = "admission"
 )
 
 type EventSubscriptionStatus string
@@ -186,6 +221,8 @@ const (
 	RESERVATION_PENDING   ReservationStatus = "pending"
 	RESERVATION_CANCELED  ReservationStatus = "canceled"
 	RESERVATION_COMPLETED ReservationStatus = "completed"
+	RESERVATION_PAID      ReservationStatus = "paid"
+	RESERVATION_ADMITTED  ReservationStatus = "admitted"
 )
 
 type BookingStatus string
@@ -311,8 +348,8 @@ type TicketReservationsURIParams struct {
 }
 
 type OrganizationsQueryFilters struct {
-	Type  string `form:"type" binding:"required"`
-	Owned bool   `form:"owned,omitempty" binding:"omitempty"`
+	Type  OrganizationType `form:"type,omitempty"`
+	Owned bool             `form:"owned,omitempty" binding:"omitempty"`
 }
 
 type Claims struct {
@@ -330,3 +367,11 @@ type CreateSettingRequestBody struct {
 }
 
 type Handler func(payload string)
+
+type UserRole string
+
+const (
+	ROLE_ADMIN  UserRole = "admin"
+	ROLE_OWNER  UserRole = "owner"
+	ROLE_MEMBER UserRole = "member"
+)

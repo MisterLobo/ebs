@@ -184,34 +184,6 @@ func main() {
 	}
 
 	router.Use(func(ctx *gin.Context) {
-		secret := ctx.Request.Header.Get("x-secret")
-		log.Printf("[secret]: %s\n", secret)
-		origin := ctx.Request.Header.Get("origin")
-		log.Printf("[origin]: %s\n", origin)
-		match, _ := regexp.MatchString(`(\w+.?)?\.amazonaws\.com$`, origin)
-		if match {
-			return
-		}
-		log.Printf("Origin matched: %v %s\n", match, origin)
-		match, _ = regexp.MatchString(`(\w+.?)?\.stripe\.com$`, origin)
-		if match {
-			return
-		}
-		log.Printf("Origin matched: %v %s\n", match, origin)
-		match, _ = regexp.MatchString(`localhost:\d+`, origin)
-		if match {
-			return
-		}
-		log.Printf("Origin matched: %v %s\n", match, origin)
-		match, _ = regexp.MatchString(`app:mobile`, origin)
-		if match {
-			return
-		}
-		log.Printf("Origin matched: %v %s\n", match, origin)
-		ctx.AbortWithStatus(http.StatusNotFound)
-	})
-
-	router.Use(func(ctx *gin.Context) {
 		mm := os.Getenv("MAINTENANCE_MODE")
 		atoi, err := strconv.ParseBool(mm)
 		if err != nil || atoi {
@@ -228,6 +200,28 @@ func main() {
 
 	apiv1 := router.Group("/api/v1")
 	guest := apiv1.Group("/auth")
+	guest.Use(func(ctx *gin.Context) {
+		secret := ctx.Request.Header.Get("x-secret")
+		log.Printf("[secret]: %s\n", secret)
+		origin := ctx.Request.Header.Get("origin")
+		log.Printf("[origin]: %s\n", origin)
+		appHost := os.Getenv("APP_HOST")
+		match, _ := regexp.MatchString(appHost, origin)
+		if match {
+			return
+		}
+		match, _ = regexp.MatchString(`localhost:\d+`, origin)
+		if match {
+			return
+		}
+		log.Printf("Origin matched: %v %s\n", match, origin)
+		match, _ = regexp.MatchString(`app:mobile`, origin)
+		if match {
+			return
+		}
+		log.Printf("Origin matched: %v %s\n", match, origin)
+		ctx.AbortWithStatus(http.StatusNotFound)
+	})
 	guest.
 		POST("/login", func(ctx *gin.Context) {
 			var body types.RegisterUserRequestBody

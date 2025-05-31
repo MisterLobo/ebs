@@ -161,11 +161,15 @@ func main() {
 		cc.AllowHeaders = append(cc.AllowHeaders, "Origin")
 		cc.AllowOriginFunc = func(origin string) bool {
 			match, _ := regexp.MatchString(`(\w+.?)+\.amazonaws\.com$`, origin)
-			log.Printf("Origin matched: %v\n", match)
+			log.Printf("Origin matches %s: %v\n", origin, match)
 			if match {
 				return true
 			}
 			match, _ = regexp.MatchString(appHost, origin)
+			if match {
+				return true
+			}
+			match, _ = regexp.MatchString("app:mobile", origin)
 			if match {
 				return true
 			}

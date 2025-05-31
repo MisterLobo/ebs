@@ -210,10 +210,6 @@ func main() {
 		if match {
 			return
 		}
-		match, _ = regexp.MatchString(`localhost:\d+`, origin)
-		if match {
-			return
-		}
 		log.Printf("Origin matched: %v %s\n", match, origin)
 		match, _ = regexp.MatchString(`app:mobile`, origin)
 		if match {

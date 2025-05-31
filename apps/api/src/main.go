@@ -201,21 +201,26 @@ func main() {
 	apiv1 := router.Group("/api/v1")
 	guest := apiv1.Group("/auth")
 	guest.Use(func(ctx *gin.Context) {
-		secret := ctx.Request.Header.Get("x-secret")
-		log.Printf("[secret]: %s\n", secret)
 		origin := ctx.Request.Header.Get("origin")
 		log.Printf("[origin]: %s\n", origin)
+		secret := ctx.Request.Header.Get("x-secret")
+		realSecret := os.Getenv("API_SECRET")
+		log.Printf("[secret]: %s %s\n", secret, realSecret)
+		if secret != realSecret {
+			ctx.AbortWithStatus(http.StatusForbidden)
+			return
+		}
 		appHost := os.Getenv("APP_HOST")
 		match, _ := regexp.MatchString(appHost, origin)
 		if match {
 			return
 		}
-		log.Printf("Origin matched: %v %s\n", match, origin)
+		log.Printf("Origin matches host: %v %s\n", match, origin)
 		match, _ = regexp.MatchString(`app:mobile`, origin)
 		if match {
 			return
 		}
-		log.Printf("Origin matched: %v %s\n", match, origin)
+		log.Printf("Origin matches mobile: %v %s\n", match, origin)
 		ctx.AbortWithStatus(http.StatusNotFound)
 	})
 	guest.

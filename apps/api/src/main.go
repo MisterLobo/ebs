@@ -203,6 +203,11 @@ func main() {
 	guest.Use(func(ctx *gin.Context) {
 		secret := ctx.Request.Header.Get("x-secret")
 		log.Printf("[secret]: %s\n", secret)
+		realSecret := os.Getenv("API_SECRET")
+		if secret != realSecret {
+			ctx.AbortWithStatus(http.StatusForbidden)
+			return
+		}
 		origin := ctx.Request.Header.Get("origin")
 		log.Printf("[origin]: %s\n", origin)
 		appHost := os.Getenv("APP_HOST")

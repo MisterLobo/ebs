@@ -7,6 +7,8 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList } from '@/co
 import { redirect } from 'next/navigation'
 import { EventsHeaderActions } from './components/actions'
 import { format } from 'date-fns'
+import { Suspense } from 'react'
+import { Loader2 } from 'lucide-react'
 
 export default async function EventsPage() {
   const org = await getActiveOrganization()
@@ -48,7 +50,9 @@ export default async function EventsPage() {
     <div className="flex flex-1 flex-col">
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-          <DataTable data={events} />
+          <Suspense fallback={<Loader2 className="animate-spin" />}>
+            <DataTable data={events} />
+          </Suspense>
         </div>
       </div>
     </div>

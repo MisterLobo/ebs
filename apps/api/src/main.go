@@ -158,7 +158,7 @@ func main() {
 	} else {
 		cc := cors.DefaultConfig()
 		cc.AllowMethods = append(cc.AllowMethods, "GET", "POST", "PATCH", "PUT", "DELETE", "HEAD")
-		cc.AllowHeaders = append(cc.AllowHeaders, "Origin")
+		cc.AllowHeaders = append(cc.AllowHeaders, "Origin", "Authorization", "x-secret")
 		cc.AllowOriginFunc = func(origin string) bool {
 			match, _ := regexp.MatchString(`(\w+.?)+\.amazonaws\.com$`, origin)
 			log.Printf("Origin matches %s: %v\n", origin, match)
@@ -251,7 +251,7 @@ func main() {
 			var muser models.User
 			if err := db.
 				Model(&models.User{}).
-				Select("id").
+				Select("id", "name", "email").
 				Where(&models.User{Email: user.Email}).
 				First(&muser).
 				Error; err != nil {
@@ -282,7 +282,11 @@ func main() {
 
 			go func() {
 				rd := lib.GetRedisClient()
-				_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:user", muser.ID), "$", muser).Result()
+				_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:user", muser.ID), "$", &muser).Result()
+				if err != nil {
+					log.Printf("[redis] Error updating user cache: %s\n", err.Error())
+				}
+				_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:meta", muser.ID), "$", map[string]string{"photoURL": user.PhotoURL}).Result()
 				if err != nil {
 					log.Printf("[redis] Error updating user cache: %s\n", err.Error())
 				}
@@ -2665,6 +2669,38 @@ func main() {
 					return
 				}
 				ctx.Status(http.StatusNoContent)
+			}).
+			GET("/me", func(ctx *gin.Context) {
+				rd := lib.GetRedisClient()
+				userId := ctx.GetUint("id")
+				res, err := rd.JSONGet(context.Background(), fmt.Sprintf("%d:user", userId)).Result()
+				if err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				var user models.User
+				err = json.Unmarshal([]byte(res), &user)
+				if err != nil {
+					log.Printf("Error on json unmarshal: %s\n", err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				var mm map[string]string
+				res, err = rd.JSONGet(context.Background(), fmt.Sprintf("%d:meta", userId)).Result()
+				err = json.Unmarshal([]byte(res), &mm)
+				if err != nil {
+					log.Printf("Error on json unmarshal: %s\n", err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				ctx.JSON(http.StatusOK, gin.H{"data": map[string]any{
+					"me": map[string]string{
+						"name":   user.Name,
+						"email":  user.Email,
+						"avatar": mm["photoURL"],
+					},
+					"md": mm,
+				}})
 			})
 
 		authorized.
@@ -2772,30 +2808,8 @@ func generateJWT(email string, uid uint, orgId uint) (string, error) {
 	now := time.Now()
 	expirationTime := now.Add(24 * time.Hour)
 	permissionClaims := []string{
-		"organizations:list",
-		"organizations:read",
-		"organizations:write",
-		"teams:list",
-		"teams:read",
-		"teams:write",
 		"user:read",
 		"user:update",
-		"events:*",
-		"events:list",
-		"events:read",
-		"events:write",
-		"tickets:*",
-		"tickets:list",
-		"tickets:read",
-		"tickets:write",
-		"reservations:*",
-		"reservations:list",
-		"reservations:read",
-		"reservations:write",
-		"admissions:*",
-		"admissions:list",
-		"admissions:read",
-		"admissions:write",
 	}
 	claims := &Claims{
 		Permissions:  permissionClaims,

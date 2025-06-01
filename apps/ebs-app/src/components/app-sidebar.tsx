@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/sidebar'
 import { NavPersonal } from './nav-personal'
 import { Organization } from '@/lib/types'
+import { me } from '@/lib/actions'
 
 // This is sample data.
 const data = {
@@ -216,6 +217,13 @@ type Props = {
 }
 
 export function AppSidebar({ teams, ...props }: React.ComponentProps<typeof Sidebar> & Props) {
+  const [userData, setUserData] = React.useState<any>()
+  React.useEffect(() => {
+    me().then(d => {
+      console.log(d)
+      setUserData(d?.me)
+    })
+  }, [])
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -227,7 +235,7 @@ export function AppSidebar({ teams, ...props }: React.ComponentProps<typeof Side
         <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={userData} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

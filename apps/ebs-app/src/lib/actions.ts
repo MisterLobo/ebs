@@ -770,3 +770,22 @@ export async function getEventSubscription(id: number): Promise<number | null> {
   const { data } = await response.json()
   return data
 }
+
+export async function me(): Promise<{ me?: any, md?: Record<string, string> } | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/me`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'origin': `${process.env.APP_HOST}`,
+      'x-secret': `${process.env.API_SECRET}`,
+    },
+  })
+  if (response.status !== 200) {
+    console.error('Something went wrong')
+    return null
+  }
+
+  const { data } = await response.json()
+  return data
+}

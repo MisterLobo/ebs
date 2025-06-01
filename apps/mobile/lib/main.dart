@@ -2,15 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-GetIt locator = GetIt.instance;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 Future main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   await dotenv.load(fileName: '.env');
   runApp(const MyApp());
 }
@@ -49,21 +54,6 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       debugShowCheckedModeBanner: false,
@@ -75,30 +65,8 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
-  @override
-  State<StatefulWidget> createState() => _LoginPageState();
-}
-class _LoginPageState extends State<LoginPage> {
-  @override
-  Widget build(BuildContext context) {
-    // TODO: implement build
-    throw UnimplementedError();
-  }
-}
-
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
 
   final String title;
 
@@ -111,8 +79,24 @@ class _MyHomePageState extends State<MyHomePage> {
   late bool verified;
   late bool loading;
   late int status;
+  bool shouldStartManually = false;
+
+  Future<UserCredential> signInWithGoogle() async {
+    final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+
+    final GoogleSignInAuthentication? googleAuth = await googleUser?.authentication;
+
+    final credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth?.accessToken,
+      idToken: googleAuth?.idToken,
+    );
+
+    return await FirebaseAuth.instance.signInWithCredential(credential);
+  }
 
   Future<void> login(BuildContext context) async {
+    final cred = await signInWithGoogle();
+    final email = cred.user?.email ?? '';
     var apiHost = dotenv.env['API_HOST'] ?? '';
     var secret = dotenv.env['API_SECRET'] ?? '';
     debugPrint('$apiHost $secret');
@@ -123,7 +107,7 @@ class _MyHomePageState extends State<MyHomePage> {
         'origin': 'app:mobile',
       },
       body: jsonEncode(<String, String>{
-        'email': 'algae1234567890@gmail.com',
+        'email': email,
       }),
     );
 
@@ -133,7 +117,7 @@ class _MyHomePageState extends State<MyHomePage> {
       var token = responseBody['token'];
       context.read<AppCubit>().updateToken(token);
     } else {
-      debugPrint('Could not retrieve authentication token (status ${response.statusCode})');
+      debugPrint('Could not retrieve authentication token: reason: ${response.reasonPhrase} (status ${response.statusCode})');
     }
   }
 
@@ -142,7 +126,7 @@ class _MyHomePageState extends State<MyHomePage> {
   MobileScannerController initController() => MobileScannerController(
     autoStart: false,
     cameraResolution: const Size(1920, 1080),
-    detectionSpeed: DetectionSpeed.normal,
+    detectionSpeed: DetectionSpeed.unrestricted,
     detectionTimeoutMs: 1000,
     autoZoom: true,
     invertImage: false,
@@ -160,7 +144,7 @@ class _MyHomePageState extends State<MyHomePage> {
       Uri.https(apiHost, '/api/v1/admission'),
       headers: <String, String>{
         'Content-Type': 'application/json; charset=UTF-8',
-        'Authorization': 'Bearer ${state.token}',
+        'Authorization': 'Bearer ${state.token ?? 'token'}',
         'x-secret': secret,
         'origin': 'app:mobile',
       },
@@ -168,8 +152,26 @@ class _MyHomePageState extends State<MyHomePage> {
         'code': state.code!,
       }),
     );
+    if (!context.mounted) {
+      return;
+    }
 
     var verifyOk = response.statusCode == 200;
+    if (!verifyOk) {
+      try {
+        var responseBody = jsonDecode(response.body) as Map<String, dynamic>;
+        var error = responseBody['error'];
+        debugPrint('Error response from Server: $error');
+        setState(() {
+          status = response.statusCode;
+          loading = false;
+          verified = false;
+        });
+        return;
+      } catch (e) {
+        //
+      }
+    }
     context.read<AppCubit>().updateState('ready');
     setState(() {
       status = response.statusCode;
@@ -181,8 +183,17 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    ready = true;
+    FirebaseAuth.instance
+        .authStateChanges()
+        .listen((User? user) {
+      if (user == null) {
+        print('User is currently signed out!');
+      } else {
+        print('User is signed in!');
+      }
+    });
     controller = initController();
+    ready = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller!.start();
     });
@@ -208,15 +219,14 @@ class _MyHomePageState extends State<MyHomePage> {
               ready = false;
               loading = true;
             });
-            // controller!.pause();
+            controller!.pause();
             verifyCode(context, state);
           }
         },
         builder: (context, state) {
           if (ready) {
+            controller!.start();
             return Center(
-              // Center is a layout widget. It takes a single child and positions it
-              // in the middle of the parent.
               child: controller == null ? const Placeholder() : Stack(
                 children: [
                   MobileScanner(
@@ -265,7 +275,6 @@ class _MyHomePageState extends State<MyHomePage> {
                         ready = true;
                         loading = false;
                       });
-                      // controller!.start();
                     },
                     child: Text('Abort', style: TextStyle(color: Colors.red)),
                   ),
@@ -286,7 +295,6 @@ class _MyHomePageState extends State<MyHomePage> {
                       loading = false;
                       ready = true;
                     });
-                    // controller!.start();
                   },
                   child: Text('New scan'),
                 ),
@@ -299,7 +307,6 @@ class _MyHomePageState extends State<MyHomePage> {
                       loading = false;
                       ready = true;
                     });
-                    // controller!.start();
                   },
                   child: Text('New scan', style: TextStyle(fontSize: 32)),
                 ),

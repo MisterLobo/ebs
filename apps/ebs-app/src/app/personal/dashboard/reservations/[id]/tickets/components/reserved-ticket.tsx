@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { downloadTicket } from '@/lib/actions'
+import { downloadTicket, getTicketShareLink } from '@/lib/actions'
 import { Booking, Reservation, Ticket } from '@/lib/types'
 import { isUpcoming } from '@/lib/utils'
 import { IconTransfer } from '@tabler/icons-react'
@@ -23,11 +23,11 @@ export default function ReservedTicket({ data, booking, reservation }: Props) {
   const admitted = useMemo(() => isUpcoming(booking?.event?.date_time as string) && booking?.status === 'completed' && reservation?.status === 'completed', [reservation])
   const canUse = useMemo(() => isUpcoming(booking?.event?.date_time as string) && booking?.status === 'completed' && reservation?.status === 'paid' && !admitted, [reservation, admitted])
   const downloadQrCode = useCallback(async () => {
-    if (!data) {
+    if (!data || !reservation) {
       return
     }
     setBusy(true)
-    const { blob, error, status } = await downloadTicket(data.id, reservation?.id as number)
+    const { blob, error, status } = await downloadTicket(data.id, reservation.id as number)
     if (error) {
       toast(`ERROR ${status}`, {
         description: error,
@@ -40,6 +40,20 @@ export default function ReservedTicket({ data, booking, reservation }: Props) {
     }
     setBusy(false)
   }, [data?.id, reservation?.id])
+  const shareTicket = useCallback(async () => {
+    if (!data || !reservation) {
+      return
+    }
+    setBusy(true)
+    const url = await getTicketShareLink(data.id as number, reservation.id as number)
+    if (url) {
+      await navigator.clipboard.writeText(url)
+      toast('NOTICE', {
+        description: 'Share URL has been copied to clipboard',
+      })
+    }
+    setBusy(false)
+  }, [])
   useEffect(() => {
     if (url && link.current) {
       link.current?.click()
@@ -55,7 +69,7 @@ export default function ReservedTicket({ data, booking, reservation }: Props) {
         }
         <p>{ data?.currency?.toUpperCase() } { data?.price?.toLocaleString('en-US', { minimumFractionDigits: 2 }) }</p>
         <CardAction className="space-x-2">
-          <Button type="button" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" disabled={!canUse}><Share2 /> SHARE</Button>
+          <Button type="button" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" onClick={shareTicket} disabled={admitted || !canUse || busy}><Share2 /> SHARE</Button>
           <Button type="button" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" onClick={downloadQrCode} disabled={admitted || !canUse || busy}><Download /> DOWNLOAD QR CODE</Button>
           <Button type="button" variant="secondary" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" disabled><IconTransfer /> TRANSFER</Button>
           <Button type="button" variant="destructive" className="cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed" disabled><DollarSign /> SELL</Button>

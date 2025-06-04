@@ -253,6 +253,21 @@ const (
 
 type Metadata map[string]any
 
+func (a Metadata) Value() (driver.Value, error) {
+	valueString, err := json.Marshal(a)
+	return string(valueString), err
+}
+func (a *Metadata) Scan(value any) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	return nil
+}
+
 type APIResponseEvent struct {
 	ID          uint           `json:"id,omitempty"`
 	CreatedAt   *time.Time     `json:"created_at,omitempty"`

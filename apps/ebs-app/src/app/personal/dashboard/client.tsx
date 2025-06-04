@@ -12,13 +12,14 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { isUpcoming } from '@/lib/utils'
 import { LoaderCircle } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatDistance } from 'date-fns'
 
 function ReservationCard({ data }: { data: Booking }) {
   return (
     <Card className="w-3xl h-auto">
       <CardHeader>
-        <p>Date: { format(new Date(data?.created_at as string), 'PPP p') }</p>
-        <p className="text-xs">{ format(new Date(data.event?.date_time as string), 'PPP p') }</p>
+        <p>Created { formatDistance(new Date(data?.created_at as string), Date.now(), { addSuffix: true, includeSeconds: true }) }</p>
+        <p className="text-xs">{ formatDistance(new Date(data.event?.date_time as string), Date.now(), { addSuffix: true }) }</p>
         <CardTitle>{ data?.slots_taken } slots</CardTitle>
       </CardHeader>
       <CardContent>
@@ -45,6 +46,8 @@ export function PersonalDashboardClient() {
     if (error) {
       toast('ERROR', {
         description: error,
+        duration: 30000,
+        dismissible: true,
       })
       // setBusy(false)
       return

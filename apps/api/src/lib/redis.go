@@ -21,8 +21,7 @@ func GetRedisClient() *redis.Client {
 
 func TestRedis() {
 	rdb := GetRedisClient()
-	err := rdb.Set(context.Background(), "test", "test", 0).Err()
-	if err != nil {
+	if err := rdb.Set(context.Background(), "test", "test", 0).Err(); err != nil {
 		log.Printf("Failed to set value for key %s: %s\n", "test", err)
 		return
 	}

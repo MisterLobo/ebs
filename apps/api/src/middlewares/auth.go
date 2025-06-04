@@ -46,7 +46,6 @@ func AuthMiddleware(ctx *gin.Context) {
 		return
 	}
 
-	log.Println("sub:", claims.Subject)
 	db := db.GetDb()
 	var user models.User
 	uid, err := strconv.Atoi(claims.Subject)
@@ -65,6 +64,7 @@ func AuthMiddleware(ctx *gin.Context) {
 		return
 	}
 
+	ctx.Set("tenant_id", user.TenantID.String())
 	ctx.Set("email", user.Email)
 	ctx.Set("id", user.ID)
 	ctx.Set("uid", user.UID)

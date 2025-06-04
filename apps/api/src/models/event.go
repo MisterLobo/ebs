@@ -5,6 +5,8 @@ import (
 	"ebs/src/types"
 	"log"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Event struct {
@@ -23,24 +25,27 @@ type Event struct {
 	OpensAt     *time.Time        `json:"opens_at,omitempty"`
 	Deadline    time.Time         `json:"deadline,omitempty"`
 	Metadata    *types.Metadata   `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Identifier  *string           `json:"resource_id"`
+	TenantID    *uuid.UUID        `gorm:"type:uuid" json:"-"`
 
-	Creator            User                `gorm:"foreignKey:created_by" json:"-"`
-	Organization       Organization        `gorm:"foreignKey:organizer_id" json:"organization"`
-	Tickets            []Ticket            `json:"tickets,omitempty"`
-	Subscribers        []*User             `gorm:"many2many:event_subscriptions;" json:"subscribers,omitempty"`
-	EventSubscriptions []EventSubscription `gorm:"foreignKey:event_id" json:"event_susbcriptions,omitempty"`
+	Creator      User         `gorm:"foreignKey:created_by" json:"-"`
+	Organization Organization `gorm:"foreignKey:organizer_id" json:"organization"`
+	Tickets      []Ticket     `json:"tickets,omitempty"`
+	Subscribers  []*User      `gorm:"many2many:event_subscriptions;joinForeignKey:SubscriberID;joinReferences:SubscriberID" json:"subscribers,omitempty"`
+	// EventSubscriptions []EventSubscription `gorm:"foreignKey:event_id" json:"event_susbcriptions,omitempty"`
 
 	types.Timestamps
 }
 
 type EventSubscription struct {
 	ID           uint                          `gorm:"primarykey" json:"id"`
-	EventID      uint                          `json:"event_id,omitempty"`
-	SubscriberID uint                          `json:"subscriber_id,omitempty"`
+	EventID      uint                          `gorm:"primarykey" json:"event_id,omitempty"`
+	SubscriberID uint                          `gorm:"primarykey" json:"subscriber_id,omitempty"`
 	Status       types.EventSubscriptionStatus `gorm:"default:'notify'" json:"status,omitempty"`
+	TenantID     *uuid.UUID                    `gorm:"type:uuid" json:"-"`
 
-	User  User  `gorm:"foreignKey:subscriber_id" json:"-"`
-	Event Event `gorm:"foreignKey:event_id" json:"event,omitempty"`
+	// User  User  `gorm:"foreignKey:subscriber_id;references:id" json:"-"`
+	// Event Event `gorm:"foreignKey:event_id" json:"event,omitempty"`
 
 	types.Timestamps
 }

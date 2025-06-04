@@ -8,7 +8,6 @@ import {
   Command,
   Frame,
   GalleryVerticalEnd,
-  Map,
   PieChart,
   Settings2,
   SquareTerminal,
@@ -27,6 +26,7 @@ import {
 } from '@/components/ui/sidebar'
 import { NavPersonal } from './nav-personal'
 import { Organization } from '@/lib/types'
+import { me } from '@/lib/actions'
 
 // This is sample data.
 const data = {
@@ -89,6 +89,7 @@ const data = {
       title: 'Tickets',
       url: '/dashboard/tickets',
       icon: BookOpen,
+      isActive: true,
       items: [
         {
           title: 'New Ticket Price',
@@ -117,22 +118,6 @@ const data = {
         {
           title: 'Manage Bookings',
           url: '/dashboard/bookings',
-        },
-      ],
-    },
-    {
-      title: 'Reservations',
-      url: '/dashboard/reservations',
-      icon: SquareTerminal,
-      isActive: true,
-      items: [
-        {
-          title: 'Create Reservations',
-          url: '#',
-        },
-        {
-          title: 'Manage Reservations',
-          url: '/dashboard/reservations',
         },
       ],
     },
@@ -172,15 +157,15 @@ const data = {
         },
         {
           title: 'Team',
-          url: '#',
+          url: '/settings#team',
         },
         {
           title: 'Billing',
-          url: '#',
+          url: '/settings#billing',
         },
         {
           title: 'Limits',
-          url: '#',
+          url: '/settings#limits',
         },
       ],
     },
@@ -203,11 +188,6 @@ const data = {
       url: '/events',
       icon: PieChart,
     },
-    {
-      name: 'Travel',
-      url: '#',
-      icon: Map,
-    },
   ],
 }
 
@@ -216,6 +196,12 @@ type Props = {
 }
 
 export function AppSidebar({ teams, ...props }: React.ComponentProps<typeof Sidebar> & Props) {
+  const [userData, setUserData] = React.useState<any>()
+  React.useEffect(() => {
+    me().then(d => {
+      setUserData(d?.me)
+    })
+  }, [])
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -227,7 +213,7 @@ export function AppSidebar({ teams, ...props }: React.ComponentProps<typeof Side
         <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={userData} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

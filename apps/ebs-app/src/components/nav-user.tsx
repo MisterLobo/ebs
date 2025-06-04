@@ -5,6 +5,7 @@ import {
   Bell,
   ChevronsUpDown,
   CreditCard,
+  Loader2,
   LogOut,
   Sparkles,
 } from 'lucide-react'
@@ -52,7 +53,7 @@ export function NavUser({
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <DropdownMenu>
+        {user ? <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
@@ -115,7 +116,11 @@ export function NavUser({
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
+        </DropdownMenu> :
+        <div className="flex items-center justify-center">
+          <Loader2 className="animate-spin size-8" />
+        </div>
+        }
       </SidebarMenuItem>
     </SidebarMenu>
   )

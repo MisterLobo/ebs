@@ -4,6 +4,7 @@ import (
 	"ebs/src/types"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/gosimple/slug"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,7 @@ type Organization struct {
 	Verified             bool                   `gorm:"default:false" json:"verified,omitempty"`
 	PaymentVerified      bool                   `gorm:"default:false" json:"payment_verified,omitempty"`
 	Slug                 string                 `gorm:"uniqueIndex:slugid" json:"slug"`
+	TenantID             *uuid.UUID             `gorm:"type:uuid" json:"-"`
 
 	Events []Event `gorm:"foreignKey:organizer_id" json:"-"`
 	Owner  User    `gorm:"foreignKey:owner_id" json:"-"`

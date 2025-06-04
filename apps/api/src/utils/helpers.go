@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/google/uuid"
 	"github.com/gosimple/slug"
@@ -28,7 +29,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, creatorId uint) (uint, error) {
+func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, organizationId uint, creatorId uint) (uint, error) {
 	dateTime, err := time.Parse(config.TIME_PARSE_FORMAT, params.DateTime)
 	if err != nil {
 		log.Printf("Error parsing date_time: %s\n", err.Error())
@@ -47,6 +48,7 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 	log.Printf("dateTime: Local=%s UTC=%s\n", dateTime.Local().String(), dateTime.UTC().String())
 	eventStatus := types.EVENT_DRAFT
 
+	tenantId, _ := uuid.Parse(ctx.GetString("tenant_id"))
 	event := models.Event{
 		Title:       params.Title,
 		Name:        params.Name,
@@ -58,6 +60,7 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 		CreatedBy:   creatorId,
 		Status:      eventStatus,
 		Mode:        params.Mode,
+		TenantID:    &tenantId,
 	}
 
 	var eventId uint
@@ -258,7 +261,8 @@ func CreateNewEvent(params *types.CreateEventRequestBody, organizationId uint, c
 	return event.ID, err
 }
 
-func CreateNewTicket(params *types.CreateTicketRequestBody) (uint, error) {
+func CreateNewTicket(ctx *gin.Context, params *types.CreateTicketRequestBody) (uint, error) {
+	tenantId, _ := uuid.Parse(ctx.GetString("tenant_id"))
 	ticket := models.Ticket{
 		Tier:     params.Tier,
 		Type:     params.Type,
@@ -267,6 +271,7 @@ func CreateNewTicket(params *types.CreateTicketRequestBody) (uint, error) {
 		Limited:  params.Limited,
 		Limit:    params.Limit,
 		EventID:  params.EventID,
+		TenantID: &tenantId,
 	}
 
 	db := db.GetDb()
@@ -282,6 +287,8 @@ func CreateNewTicket(params *types.CreateTicketRequestBody) (uint, error) {
 			err := fmt.Errorf("Event %d does not exist", params.EventID)
 			return err
 		}
+		resId := fmt.Sprintf("arn:%d:%d:ticket/%s", event.OrganizerID, event.ID, ticket.Tier)
+		ticket.Identifier = &resId
 		err = db.Create(&ticket).Error
 		if err != nil {
 			return err
@@ -326,7 +333,9 @@ func CreateNewTicket(params *types.CreateTicketRequestBody) (uint, error) {
 	return ticket.ID, err
 }
 
-func CreateNewOrganization(params *types.CreateOrganizationRequestBody) (uint, error) {
+func CreateNewOrganization(ctx *gin.Context, params *types.CreateOrganizationRequestBody) (uint, error) {
+	tenantId := ctx.GetString("tenant_id")
+	tid, _ := uuid.Parse(tenantId)
 	organization := models.Organization{
 		Name:         params.Name,
 		About:        params.About,
@@ -335,6 +344,7 @@ func CreateNewOrganization(params *types.CreateOrganizationRequestBody) (uint, e
 		ContactEmail: params.ContactEmail,
 		Type:         params.Type,
 		Slug:         slug.Make(params.Name),
+		TenantID:     &tid,
 	}
 
 	db := db.GetDb()
@@ -482,11 +492,11 @@ func DeleteTicket(id uint) error {
 	return err
 }
 
-func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csURL string, txId *string, csID *string, requestId *uuid.UUID) ([]uint, []string, error) {
-	metadata := types.JSONB{
+func CreateReservation(ctx *gin.Context, params *types.CreateBookingRequestBody, userId uint, csURL string, txId *string, csID *string, requestId *uuid.UUID) ([]uint, []string, error) {
+	tenantId, _ := uuid.Parse(ctx.GetString("tenant_id"))
+	metadata := types.Metadata{
 		"requestId": requestId.String(),
 	}
-	log.Printf("[metadata]: %v; %d items\n", metadata, len(params.Items))
 	db := db.GetDb()
 	reservationIDs := []uint{}
 	errors := make([]string, 0)
@@ -494,32 +504,9 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 	expirationTime := now.Add(1 * time.Hour)
 	// rd := lib.GetRedisClient()
 	err := db.Transaction(func(tx *gorm.DB) error {
-		/* txn := models.Transaction{
-			Status:      types.TRANSACTION_PENDING,
-			ReferenceID: requestId.String(),
-		}
-		err := tx.Create(&txn).Error
-		if err != nil {
-			return err
-		} */
-		/* val, err := rd.Get(context.Background(), requestId.String()).Result()
-		if err != nil {
-			log.Printf("Error retrieving cache value: %s\n", err.Error())
-			return err
-		} */
 		txnId, err := uuid.Parse(*txId)
 		if err != nil {
 			log.Printf("Error parsing value: %s\n", err.Error())
-			return err
-		}
-		log.Printf("[txnId]: %v", txnId)
-		var txn models.Transaction
-		if err = tx.
-			Model(&models.Transaction{}).
-			Where(&models.Transaction{ID: txnId}).
-			First(&txn).
-			Error; err != nil {
-			log.Printf("Transaction not found [%s]: %s\n", txnId.String(), err.Error())
 			return err
 		}
 		for _, v := range params.Items {
@@ -540,7 +527,6 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 			if err != nil {
 				return err
 			}
-			log.Println("CHECK 1")
 			slotsLeft := ticket.Limit - uint(count)
 			slots := slotsLeft - uint(v.Qty)
 			slotsToTake := 0
@@ -554,7 +540,6 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				errors = append(errors, err.Error())
 				continue
 			}
-			log.Println("CHECK 2")
 
 			metadata["slots_wanted"] = v.Qty
 			metadata["slots_taken"] = slotsToTake
@@ -572,9 +557,8 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				TransactionID:     &txnId,
 				SlotsWanted:       uint(v.Qty),
 				SlotsTaken:        uint(slotsToTake),
+				TenantID:          &tenantId,
 			}
-			log.Println("CHECK 3")
-			log.Printf("New Booking: %v\n", r)
 			err = tx.Create(&r).Error
 			if err != nil {
 				err = fmt.Errorf("error in Booking transaction: %s\n", err.Error())
@@ -582,7 +566,6 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 				return err
 			}
 			bookingId := r.ID
-			log.Printf("[%s] New Booking: %d\n", txnId, bookingId)
 
 			reservationIDs = append(reservationIDs, r.ID)
 			runsAt := expirationTime
@@ -631,6 +614,7 @@ func CreateReservation(params *types.CreateBookingRequestBody, userId uint, csUR
 					TicketID:   v.TicketID,
 					BookingID:  r.ID,
 					ValidUntil: expirationTime,
+					TenantID:   &tenantId,
 				}
 				err = tx.Create(&reservation).Error
 			}
@@ -749,6 +733,10 @@ func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[s
 	log.Printf("CheckoutSessionID: %s\n", checkoutSession.ID)
 	requestId := metadata["requestId"]
 	var txnId string
+	recoveryURL := checkoutSession.AfterExpiration.Recovery.URL
+	md := &types.Metadata{
+		"AfterExpirationRecoveryURL": recoveryURL,
+	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		txn := &models.Transaction{
 			Amount:            float64(checkoutSession.AmountTotal),
@@ -758,6 +746,7 @@ func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[s
 			ReferenceID:       requestId,
 			SourceName:        "table",
 			SourceValue:       "Booking",
+			Metadata:          md,
 			// Metadata:          &meta,
 		}
 		err := tx.Create(txn).Error

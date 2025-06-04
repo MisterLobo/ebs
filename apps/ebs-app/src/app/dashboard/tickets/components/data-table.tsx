@@ -105,10 +105,12 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 export const schema = z.object({
   id: z.number(),
   tier: z.string().optional(),
+  event_id: z.number().optional(),
   event: z.any(),
   created_at: z.string().date().optional(),
   status: z.string().optional(),
@@ -182,7 +184,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "name",
     header: "Event",
     cell: ({ row }) => {
-      return <p>{row.original.event.name}</p>
+      return <Link className="underline" href={`/dashboard/events/${row.original.event.id}`}>{row.original.event.name}</Link>
     },
     enableHiding: false,
   },
@@ -681,35 +683,13 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
           )}
           <form className="flex flex-col gap-4">
             <div className="flex flex-col gap-3">
-              <Label htmlFor="header">Title</Label>
-              <Input id="header" defaultValue={item.status} />
+              <Label htmlFor="header">Tier</Label>
+              <Input id="header" defaultValue={item.tier} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-3">
                 <Label htmlFor="type">Type</Label>
-                <Select defaultValue={item.status}>
-                  <SelectTrigger id="type" className="w-full">
-                    <SelectValue placeholder="Select a type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Table of Contents">
-                      Table of Contents
-                    </SelectItem>
-                    <SelectItem value="Executive Summary">
-                      Executive Summary
-                    </SelectItem>
-                    <SelectItem value="Technical Approach">
-                      Technical Approach
-                    </SelectItem>
-                    <SelectItem value="Design">Design</SelectItem>
-                    <SelectItem value="Capabilities">Capabilities</SelectItem>
-                    <SelectItem value="Focus Documents">
-                      Focus Documents
-                    </SelectItem>
-                    <SelectItem value="Narrative">Narrative</SelectItem>
-                    <SelectItem value="Cover Page">Cover Page</SelectItem>
-                  </SelectContent>
-                </Select>
+                <span>Standard</span>
               </div>
               <div className="flex flex-col gap-3">
                 <Label htmlFor="status">Status</Label>
@@ -718,9 +698,9 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                     <SelectValue placeholder="Select a status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Done">Done</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Not Started">Not Started</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -728,7 +708,7 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
           </form>
         </div>
         <SheetFooter className="mt-auto flex gap-2 sm:flex-col sm:space-x-0">
-          <Button className="w-full" onClick={() => router.push(`/dashboard/events/${item.id}`)}>Details</Button>
+          <Button className="w-full" onClick={() => router.push(`/dashboard/events/${item.event_id}/tickets/${item.id}`)}>Details</Button>
           <SheetClose asChild>
             <Button variant="outline" className="w-full">
               Done

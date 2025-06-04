@@ -1,13 +1,5 @@
-import CarouselWithPagination from '@/components/carousel/carousel-with-pagination'
-import Nav from '@/components/nav/nav'
+import { redirect } from 'next/navigation'
 
 export default function Index() {
-  return (
-    <div className="min-h-screen container">
-      <Nav />
-      <main className="px-4">
-        <CarouselWithPagination />
-      </main>
-    </div>
-  )
+  redirect('/personal/dashboard')
 }

@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { NumberTicker } from './ui/number-ticker'
 
 export function SectionCards() {
   return (
@@ -17,7 +18,7 @@ export function SectionCards() {
         <CardHeader>
           <CardDescription>Total Revenue</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            $1,250.00
+            $<NumberTicker value={10_000} />
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
@@ -39,7 +40,7 @@ export function SectionCards() {
         <CardHeader>
           <CardDescription>New Customers</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            1,234
+            <NumberTicker value={1_234} />
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
@@ -61,7 +62,7 @@ export function SectionCards() {
         <CardHeader>
           <CardDescription>Tickets Sold</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            45,678
+            <NumberTicker value={45_678} />
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
@@ -81,7 +82,7 @@ export function SectionCards() {
         <CardHeader>
           <CardDescription>Growth Rate</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            4.5%
+            <NumberTicker value={4} />.<NumberTicker value={5} />%
           </CardTitle>
           <CardAction>
             <Badge variant="outline">

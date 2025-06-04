@@ -2,13 +2,18 @@ package aws
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"log"
 	"os"
+	"path"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 func GetS3Client() *s3.Client {
@@ -19,6 +24,42 @@ func GetS3Client() *s3.Client {
 	}
 	svc := s3.NewFromConfig(cfg)
 	return svc
+}
+
+func S3DownloadAsset(name string) error {
+	assetsBucket := os.Getenv("S3_ASSETS_BUCKET")
+	client := GetS3Client()
+	result, err := client.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: aws.String(assetsBucket),
+		Key:    aws.String(name),
+	})
+	if err != nil {
+		var noKey *types.NoSuchKey
+		if errors.As(err, &noKey) {
+			// return nil if key does not exist
+			return nil
+		}
+		return err
+	}
+	defer result.Body.Close()
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Printf("Could not read working directory: %s\n", err.Error())
+		return err
+	}
+	tempdir := os.Getenv("TEMP_DIR")
+	filepath := path.Join(wd, "..", tempdir, fmt.Sprintf("%s.jpeg", name))
+	file, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(body)
+	return err
 }
 
 func S3UploadAsset(name string, f string) (*string, error) {

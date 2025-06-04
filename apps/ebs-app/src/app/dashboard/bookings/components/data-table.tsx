@@ -105,6 +105,7 @@ import {
 } from '@/components/ui/tabs'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
+import Link from 'next/link'
 
 export const schema = z.object({
   id: z.number(),
@@ -202,7 +203,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "name",
     header: "Event",
     cell: ({ row }) => {
-      return <p>{row.original.event.name}</p>
+      return <Link className="hover:underline" href={`/dashboard/events/${row.original.event.id}`}>{row.original.event.name}</Link>
     },
     enableHiding: false,
   },
@@ -210,11 +211,12 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "ticket_id",
     header: "Ticket (Price)",
     cell: ({ row }) => (
-      <p
-        className="flex gap-1 px-1.5 text-muted-foreground [&_svg]:size-3"
+      <Link
+        href={`/dashboard/events/${row.original.event.id}/tickets/${row.original.ticket_id}`}
+        className="flex gap-1 px-1.5 text-muted-foreground [&_svg]:size-3 hover:underline"
       >
         {row.original.ticket.tier} ({`${row.original.ticket.currency}`.toUpperCase()} {row.original.ticket.price})
-      </p>
+      </Link>
     ),
   },
   {
@@ -739,7 +741,7 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
           </form>
         </div>
         <SheetFooter className="mt-auto flex gap-2 sm:flex-col sm:space-x-0">
-          <Button className="w-full" onClick={() => router.push(`/dashboard/events/${item.id}`)}>Details</Button>
+          <Button className="w-full" onClick={() => router.push(`/dashboard/bookings/${item.id}`)}>Details</Button>
           <SheetClose asChild>
             <Button variant="outline" className="w-full">
               Done

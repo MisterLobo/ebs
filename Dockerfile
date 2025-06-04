@@ -9,7 +9,7 @@ COPY apps/api/ .
 RUN ls -al
 
 RUN go mod download
-RUN go build -o dist/api src/main.go
+RUN go build -o dist/api src/*.go
 
 FROM base AS final
 ENV PORT=9090

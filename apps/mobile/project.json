@@ -1,0 +1,30 @@
+{
+  "name": "mobile",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/mobile/",
+  "targets": {
+    "build-apk": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/mobile/",
+        "command": "flutter build apk"
+      }
+    },
+    "build-aab": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/mobile/",
+        "command": "flutter build aab"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/mobile/",
+        "command": "flutter test"
+      }
+    }
+  },
+  "tags": []
+}

@@ -17,6 +17,7 @@ export default async function SlugAboutPage() {
   return (
     <div className="container">
       <p className="text-3xl">About {about?.name}</p>
+      <p className="text-sm">{about?.about ?? 'No description'}</p>
       <p className="text-xs">Contact: {about?.email}</p>
       <p className="text-xs">{about?.country}</p>
       {about?.verified && <p className="flex items-center gap-2"><CheckCircle /><span>Verified Account</span></p>}

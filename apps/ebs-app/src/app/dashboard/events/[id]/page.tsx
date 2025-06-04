@@ -55,6 +55,12 @@ export default async function EventPage() {
       <h2 className="flex gap-2"><span>ID: { eventId }</span>&middot;<span>{ eventData.name }</span></h2>
       <h2 className="">Status: { eventData.status ? <Badge variant="outline">{eventData.status}</Badge> : '-' }</h2>
       {(eventData.status === 'notify' && eventData.opens_at) && <h2>Event reservation opens on { format(new Date(eventData.opens_at), 'PPPP, p') }</h2>}
+      <div className="flex gap-12">
+        <h2 className="inline-flex">When: {format(new Date(eventData.date_time as string), 'Pp')}</h2>
+        <h2 className="inline-flex">Deadline: {format(new Date(eventData.deadline as string), 'Pp')}</h2>
+        <h2 className="inline-flex">Where: {eventData.location}</h2>
+      </div>
+      <p className="text-sm">Description: { eventData.about || <span>No description</span> }</p>
     </div>
     <EventPageHeaderActions event={eventData} />
     {completed ?

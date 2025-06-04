@@ -107,6 +107,7 @@ import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { Admission } from '@/lib/types'
 import { getAdmission } from '@/lib/actions'
+import Link from 'next/link'
 
 export const schema = z.object({
   id: z.number(),
@@ -189,10 +190,18 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     enableHiding: false,
   },
   {
+    accessorKey: "booking",
+    header: "Booking ID",
+    cell: ({ row }) => {
+      return <Link className="hover:underline" href={`/dashboard/bookings/${row.original.reservation.booking_id}`}>{row.original.reservation.booking_id}</Link>
+    },
+    enableHiding: false,
+  },
+  {
     accessorKey: "ticket",
     header: "Ticket",
     cell: ({ row }) => {
-      return <p>{row.original.reservation.ticket.tier}</p>
+      return <Link className="hover:underline" href={`/dashboard/tickets/${row.original.reservation.ticket_id}`}>{row.original.reservation.ticket.tier}</Link>
     },
     enableHiding: false,
   },
@@ -200,7 +209,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "event",
     header: "Event",
     cell: ({ row }) => {
-      return <p>{row.original.reservation.ticket.event.name}</p>
+      return <Link className="hover:underline" href={`/dashboard/events/${row.original.reservation.ticket.event_id}`}>{row.original.reservation.ticket.event.name}</Link>
     },
     enableHiding: false,
   },

@@ -116,7 +116,11 @@ export function NavUser({
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu> : <Loader2 />}
+        </DropdownMenu> :
+        <div className="flex items-center justify-center">
+          <Loader2 className="animate-spin size-8" />
+        </div>
+        }
       </SidebarMenuItem>
     </SidebarMenu>
   )

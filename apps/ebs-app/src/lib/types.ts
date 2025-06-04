@@ -37,6 +37,9 @@ export type NewTicketRequestPayload = {
 }
 
 export type Metadata = Record<string, any>
+export type Resource = {
+  resource_id?: string,
+}
 
 export type User = {
   id?: number,
@@ -47,7 +50,9 @@ export type User = {
   email_verified?: boolean,
   phone_verified?: boolean,
   verified_at?: string,
-  stripe_account_id?: string,
+  account_id?: string,
+  subscription_id?: string,
+  customer_id?: string,
   metadata?: Metadata,
 }
 
@@ -69,7 +74,7 @@ export type Organization = {
 
   events?: Event[],
   owner?: User,
-}
+} & Timestamps & Resource
 
 export type Event = {
   id: number,
@@ -79,6 +84,7 @@ export type Event = {
   location?: string,
   date_time?: string,
   status?: EventStatus,
+  type?: string,
   organizer?: number,
   seats?: number,
   created_by?: number,
@@ -86,7 +92,7 @@ export type Event = {
   deadline?: string,
   mode?: 'default' | 'scheduled',
   organization?: Organization,
-} & Timestamps
+} & Timestamps & Resource
 
 export type Ticket = {
   id: number,
@@ -100,7 +106,7 @@ export type Ticket = {
   event_id?: number,
   stats?: TicketStats,
   event?: Event,
-} & Timestamps
+} & Timestamps & Resource
 
 type CartItemTicket = Pick<Ticket, 'id' | 'tier' | 'currency' | 'price' | 'limit' | 'limited' | 'stats'>
 
@@ -138,7 +144,7 @@ export type Booking = {
   txn?: Transaction,
   slots_wanted?: number,
   slots_taken?: number,
-} & Timestamps
+} & Timestamps & Resource
 
 export type Reservation = {
   id: number,
@@ -148,7 +154,7 @@ export type Reservation = {
   ticket?: Ticket,
   booking?: Booking,
   status?:string,
-} & Timestamps
+} & Timestamps & Resource
 
 export type Transaction = {
   id?: string,
@@ -161,7 +167,8 @@ export type Transaction = {
   checkout_session_id?: string,
   payment_intent_id?: string,
   status?: string,
-} & Timestamps
+  coupon_code?: string,
+} & Timestamps & Resource
 
 export type Admission = {
   id: number,
@@ -170,7 +177,7 @@ export type Admission = {
   type?: string,
   status?: string,
   reservation?: Reservation,
-} & Timestamps
+} & Timestamps & Resource
 
 export type EventQueryFilters = {
   opens_at?: string,
@@ -188,4 +195,4 @@ export type Waitlist = {
   status?: string,
   event_id?: number,
   created_at?: string,
-}
+} & Timestamps & Resource

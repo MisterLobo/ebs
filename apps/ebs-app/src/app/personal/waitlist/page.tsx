@@ -24,7 +24,7 @@ export default async function WaitlistPage() {
       <>
       <h2 className="text-xl">Subscription: { data?.length }</h2>
       <div className="flex flex-col gap-4 items-center">
-      {data.map((res: any, index: number) => (
+      {data?.map((res: any, index: number) => (
         <WaitlistItem key={index} data={res} />
       ))}
       </div>

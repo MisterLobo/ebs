@@ -45,33 +45,43 @@ func InitDb() *gorm.DB {
 	if err != nil {
 		log.Fatalf("error migration: %s", err.Error())
 	}
+	if err = db.Exec(`
+	CREATE OR REPLACE FUNCTION set_tenant(tenant_id text) RETURNS void AS $$
+	BEGIN
+		PERFORM set_config('app.current_tenant', tenant_id, false);
+	END;
+	$$ LANGUAGE plpgsql;
+	`).Error; err != nil {
+		log.Printf("Error creating FUNCTION set_tenant: %s\n", err.Error())
+	}
 
 	return db
 }
 
 func InitBroker() {
+	appEnv := os.Getenv("APP_ENV")
 	go common.UpdateMissingSlugs()
 	go RecoverQueuedJobs()
 	go UpdateExpiredJobs()
 	go StatusUpdateExpiredBookings()
-	var h1 types.Handler = common.KafkaEventsToOpenConsumer
-	go lib.KafkaConsumer("events", "EventsToOpen", &h1)
-	var h2 types.Handler = common.KafkaEventsToCloseConsumer
-	go lib.KafkaConsumer("events", "EventsToClose", &h2)
-	var h3 types.Handler = common.KafkaEventsToCompleteConsumer
-	go lib.KafkaConsumer("events", "EventsToComplete", &h3)
-	// go lib.KafkaConsumers("events", "EventsToOpen", "EventsToClose", "EventsToComplete")
-	// lib.KafkaProducer("asdf")
-	go lib.KafkaCreateTopics("events-open", "events-close", "EventsToOpen", "EventsToClose", "EventsToComplete")
+	if appEnv == "test" || appEnv == "prod" {
+		go InitTopics()
+		go InitQueues()
+
+		go lib.S3ListObjects()
+		go common.SQSConsumers()
+		go common.SNSSubscribes()
+	} else {
+		var h1 types.Handler = common.KafkaEventsToOpenConsumer
+		go lib.KafkaConsumer("events", "EventsToOpen", &h1)
+		var h2 types.Handler = common.KafkaEventsToCloseConsumer
+		go lib.KafkaConsumer("events", "EventsToClose", &h2)
+		var h3 types.Handler = common.KafkaEventsToCompleteConsumer
+		go lib.KafkaConsumer("events", "EventsToComplete", &h3)
+		go lib.KafkaCreateTopics("events-open", "events-close", "EventsToOpen", "EventsToClose", "EventsToComplete")
+	}
 	go lib.TestRedis()
-	// go common.EventsOpenConsumer()
 
-	go InitTopics()
-	go InitQueues()
-
-	go lib.S3ListObjects()
-	go common.SQSConsumers()
-	go common.SNSSubscribes()
 }
 
 func InitQueues() {

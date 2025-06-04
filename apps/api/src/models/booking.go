@@ -16,12 +16,13 @@ type Booking struct {
 	Currency          string              `json:"currency,omitempty"`
 	UserID            uint                `json:"user_id,omitempty"`
 	EventID           uint                `json:"event_id,omitempty"`
-	Metadata          *types.JSONB        `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Metadata          *types.Metadata     `gorm:"type:jsonb" json:"metadata,omitempty"`
 	CheckoutSessionId *string             `json:"checkout_session_id,omitempty"`
 	PaymentIntentId   *string             `json:"payment_intent_id,omitempty"`
 	TransactionID     *uuid.UUID          `json:"txn_id,omitempty"`
 	SlotsWanted       uint                `json:"slots_wanted"`
 	SlotsTaken        uint                `json:"slots_taken"`
+	TenantID          *uuid.UUID          `gorm:"type:uuid" json:"-"`
 
 	Event        *Event         `gorm:"foreignKey:event_id" json:"event,omitempty"`
 	User         *User          `gorm:"foreignKey:user_id" json:"user,omitempty"`

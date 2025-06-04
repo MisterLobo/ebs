@@ -3,6 +3,8 @@ package models
 import (
 	"database/sql/driver"
 	"ebs/src/types"
+
+	"github.com/google/uuid"
 )
 
 type TicketStatus types.Status
@@ -28,6 +30,8 @@ type Ticket struct {
 	EventID       uint            `json:"event_id,omitempty"`
 	StripePriceId *string         `json:"-"`
 	Metadata      *types.Metadata `gorm:"type:jsonb" json:"metadata"`
+	Identifier    *string         `json:"resource_id"`
+	TenantID      *uuid.UUID      `gorm:"type:uuid" json:"-"`
 
 	Event    Event     `json:"event,omitempty"`
 	Bookings []Booking `gorm:"many2many:reservations;" json:"bookings,omitempty"`

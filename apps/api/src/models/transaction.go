@@ -18,6 +18,8 @@ type Transaction struct {
 	Metadata          *types.Metadata         `gorm:"type:jsonb" json:"metadata,omitempty"`
 	CheckoutSessionId *string                 `json:"checkout_session_id,omitempty"`
 	PaymentIntentId   *string                 `json:"payment_intent_id,omitempty"`
+	CouponCode        *string                 `json:"coupon_code,omitempty"`
+	TenantID          *uuid.UUID              `gorm:"type:uuid" json:"-"`
 
 	types.Timestamps
 }

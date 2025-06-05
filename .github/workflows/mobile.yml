@@ -29,7 +29,8 @@ jobs:
           gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
       - run: |
           pwd
-          firebase login
+          ls -al
+          firebase login:ci
           firebase projects:list
       - name: Set up Flutter
         uses: subosito/flutter-action@v2

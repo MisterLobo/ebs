@@ -33,8 +33,8 @@ jobs:
       - name: Setup Firebase
         uses: w9jds/setup-firebase@main
         with:
-          gcp_sa_key: $GCP_SA_KEY
-          firebase_token: $FIREBASE_TOKEN
+          gcp_sa_key: ${{ env.GCP_SA_KEY }}
+          firebase_token: ${{ env.FIREBASE_TOKEN }}
       - run: |
           cd apps/mobile/
           pwd
@@ -44,8 +44,8 @@ jobs:
         run: |
           cd apps/mobile/
           cat << EOF > .env
-          API_HOST=$API_HOST
-          API_SECRET=$API_SECRET
+          API_HOST=${{ env.API_HOST }}
+          API_SECRET=${{ env.API_SECRET }}
           EOF
       - name: Setup Flutterfire
         run: |

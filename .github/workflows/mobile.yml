@@ -55,7 +55,7 @@ jobs:
           ls -al
           dart pub global activate flutterfire_cli
           flutterfire --version
-          flutterfire configure --project ${{ env.FIREBASE_PROJECT_ID }}
+          flutterfire configure -y -p ${{ env.FIREBASE_PROJECT_ID }} -t ${{ env.FIREBASE_TOKEN }}
           ls -al
       - name: Build app
         uses: subosito/flutter-action@v2

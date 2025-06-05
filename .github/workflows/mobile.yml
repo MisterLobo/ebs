@@ -35,7 +35,8 @@ jobs:
         with:
           gcp_sa_key: ${{ env.GCP_SA_KEY }}
           firebase_token: ${{ env.FIREBASE_TOKEN }}
-      - run: |
+      - name: Check Firebase CLI installation
+        run: |
           cd apps/mobile/
           pwd
           ls -al
@@ -48,9 +49,13 @@ jobs:
           API_SECRET=${{ env.API_SECRET }}
           EOF
       - name: Setup Flutterfire
-        run: |
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.29.3
+      - run: |
           cd apps/mobile/
-          echo $FIREBASE_PROJECT_ID > .firebaserc
+          echo ${{ env.FIREBASE_PROJECT_ID }} > .firebaserc
           ls -al
           dart pub global activate flutterfire_cli
           flutterfire --version

@@ -74,3 +74,22 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
+  mobile_release_build:
+    name: Mobile app release build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.29.3
+      - run: cd apps/mobile/
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter test
+      - run: flutter build apk --split-per-abi
+      - run: flutter build aab --split-per-abi

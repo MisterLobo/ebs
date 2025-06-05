@@ -37,8 +37,6 @@ jobs:
           firebase_token: ${{ env.FIREBASE_TOKEN }}
       - name: Check Firebase CLI installation
         run: firebase -V
-      - name: Check bins
-        run: which nx bunx
       - name: Configure .env
         run: |
           cd apps/mobile/

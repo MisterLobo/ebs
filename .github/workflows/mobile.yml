@@ -33,19 +33,13 @@ jobs:
       - name: Setup Firebase
         uses: w9jds/setup-firebase@main
         with:
-          gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
-          firebase_token: ${{ secrets.FIREBASE_TOKEN }}
+          gcp_sa_key: $GCP_SA_KEY
+          firebase_token: $FIREBASE_TOKEN
       - run: |
           cd apps/mobile/
           pwd
           ls -al
           firebase projects:list
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: 3.29.3
-      - run: flutter --version
       - name: Configure .env
         run: |
           cd apps/mobile/
@@ -53,17 +47,25 @@ jobs:
           API_HOST=$API_HOST
           API_SECRET=$API_SECRET
           EOF
-          echo $FIREBASE_PROJECT_ID > .firebaserc
-      - name: Setup Flutterfire and Build app
+      - name: Setup Flutterfire
         run: |
           cd apps/mobile/
-          touch .env .firebaserc
+          echo $FIREBASE_PROJECT_ID > .firebaserc
           ls -al
           dart pub global activate flutterfire_cli
           flutterfire --version
           flutterfire configure
           ls -al
+      - name: Build app
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.29.3
+      - run: |
+          cd apps/mobile/
+          ls -al
+          flutter --version
           flutter pub get
           flutter test
           flutter build apk
-          flutter build aab
+          # flutter build aab

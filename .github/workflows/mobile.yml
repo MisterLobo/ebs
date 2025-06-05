@@ -37,6 +37,8 @@ jobs:
           firebase_token: ${{ env.FIREBASE_TOKEN }}
       - name: Check Firebase CLI installation
         run: firebase -V
+      - name: Check bins
+        run: which nx bunx npx
       - name: Configure .env
         run: |
           cd apps/mobile/
@@ -57,7 +59,7 @@ jobs:
           flutterfire --version
           flutterfire configure -y -p ${{ env.FIREBASE_PROJECT_ID }} -t ${{ env.FIREBASE_TOKEN }} --platforms="android"
           ls -al
-      - name: Build app
+      - name: Install -> Build -> Test app
         uses: subosito/flutter-action@v2
         with:
           channel: stable

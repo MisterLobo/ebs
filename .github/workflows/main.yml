@@ -77,7 +77,7 @@ jobs:
   mobile_release_build:
     name: Mobile app release build
     runs-on: ubuntu-latest
-    environment: staging
+    environment: production
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
@@ -87,8 +87,11 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.29.3
+      - run: flutter --version
+      - run: cd apps/mobile/
+      - run: pwd
+      - run: ls
       - run: |
           cd apps/mobile/
           flutter pub get
-          flutter build apk
-          flutter build aab
+          flutter test

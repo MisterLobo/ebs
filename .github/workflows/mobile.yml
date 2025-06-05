@@ -36,11 +36,7 @@ jobs:
           gcp_sa_key: ${{ env.GCP_SA_KEY }}
           firebase_token: ${{ env.FIREBASE_TOKEN }}
       - name: Check Firebase CLI installation
-        run: |
-          cd apps/mobile/
-          pwd
-          ls -al
-          firebase projects:list
+        run: firebase -V
       - name: Configure .env
         run: |
           cd apps/mobile/
@@ -59,7 +55,7 @@ jobs:
           ls -al
           dart pub global activate flutterfire_cli
           flutterfire --version
-          flutterfire configure
+          flutterfire configure --project ${{ env.FIREBASE_PROJECT_ID }}
           ls -al
       - name: Build app
         uses: subosito/flutter-action@v2

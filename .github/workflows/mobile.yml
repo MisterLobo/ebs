@@ -27,9 +27,10 @@ jobs:
         uses: w9jds/setup-firebase@main
         with:
           gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
-          tools-version: 14.5.1
           project_path: apps/mobile/
-      - run: firebase login
+      - run: |
+          echo ${{ secrets.FIREBASE_CONFIG }} > firebase.json
+          firebase projects:list
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:

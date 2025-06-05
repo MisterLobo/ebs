@@ -18,7 +18,7 @@ jobs:
   mobile_debug_build:
     name: Mobile app debug build
     runs-on: ubuntu-latest
-    environment: staging
+    environment: preview
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
@@ -44,7 +44,12 @@ jobs:
           touch .env
           echo ${{ vars.API_HOST }} > .env
           echo ${{ secrets.API_SECRET }} >> .env
+          echo ${{ secrets.FIREBASE_PROJECT_ID }} > .firebaserc
+          dart pub global activate flutterfire_cli
+          flutterfire --version
+          flutterfire configure
+          ls -al
           flutter pub get
-          # flutter test
+          flutter test
           flutter build apk
-          # flutter build aab
+          flutter build aab

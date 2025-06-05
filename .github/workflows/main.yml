@@ -81,17 +81,29 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
-
+      - uses: actions/setup-node@v3
+      - name: Setup Firebase
+        uses: w9jds/setup-firebase@main
+        with:
+          gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
+          firebase_token: ${{ secrets.FIREBASE_TOKEN }}
+      - run: |
+          cd apps/mobile/
+          pwd
+          ls -al
+          firebase projects:list
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: 3.29.3
       - run: flutter --version
-      - run: cd apps/mobile/
-      - run: pwd
-      - run: ls
       - run: |
           cd apps/mobile/
+          touch .env
+          echo ${{ vars.API_HOST }} > .env
+          echo ${{ secrets.API_SECRET }} >> .env
           flutter pub get
           flutter test
+          flutter build apk
+          flutter build aab

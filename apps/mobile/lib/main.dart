@@ -110,6 +110,9 @@ class _MyHomePageState extends State<MyHomePage> {
         'email': email,
       }),
     );
+    if (!context.mounted) {
+      return;
+    }
 
     debugPrint('response: ${response.body}');
     if (response.statusCode == 200) {

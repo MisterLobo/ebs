@@ -1,0 +1,38 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+# GitHub recommends pinning actions to a commit SHA.
+# To get a newer version, you will need to update the SHA.
+# You can also reference a tag or branch, but the action may change without warning.
+
+name: Staging Deploy to Amazon ECS
+
+on:
+  push:
+    branches:
+      - mobile
+
+jobs:
+  mobile_debug_build:
+    name: Mobile app debug build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.29.3
+      - run: flutter --version
+      - run: cd apps/mobile/
+      - run: pwd
+      - run: ls
+      - run: |
+          cd apps/mobile/
+          flutter pub get
+          flutter test

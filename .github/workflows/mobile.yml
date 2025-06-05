@@ -39,9 +39,11 @@ jobs:
           channel: stable
           flutter-version: 3.29.3
       - run: flutter --version
-      - run: |
+      - name: Setup Flutterfire and Build app
+        run: |
           cd apps/mobile/
-          touch .env
+          touch .env .firebaserc
+          ls -al
           echo ${{ vars.API_HOST }} > .env
           echo ${{ secrets.API_SECRET }} >> .env
           echo ${{ secrets.FIREBASE_PROJECT_ID }} > .firebaserc

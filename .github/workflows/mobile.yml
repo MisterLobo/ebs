@@ -27,8 +27,6 @@ jobs:
         uses: w9jds/setup-firebase@main
         with:
           gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
-          project_path: apps/mobile/
-          project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
       - run: |
           echo ${{ secrets.FIREBASE_CONFIG }} > firebase.json
           firebase projects:list

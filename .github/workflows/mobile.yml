@@ -7,7 +7,7 @@
 # To get a newer version, you will need to update the SHA.
 # You can also reference a tag or branch, but the action may change without warning.
 
-name: Staging Deploy to Amazon ECS
+name: Build mobile application
 
 on:
   push:
@@ -22,7 +22,15 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
-
+      - uses: actions/setup-node@v3
+      - uses: w9jds/setup-firebase@main
+        with:
+          gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
+          tools-version: 11.9.0
+          project_path: apps/mobile/
+      - run: firebase login
+      - run: firebase deploy --only hosting
+      - run: firebase deploy --only functions
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -34,5 +42,10 @@ jobs:
       - run: ls
       - run: |
           cd apps/mobile/
+          touch .env
+          echo ${{ vars.API_HOST }} >> .env
+          echo ${{ secrets.API_SECRET }} >> .env
           flutter pub get
-          flutter test
+          # flutter test
+          flutter build apk
+          # flutter build aab

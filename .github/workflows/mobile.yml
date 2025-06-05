@@ -38,7 +38,7 @@ jobs:
       - name: Check Firebase CLI installation
         run: firebase -V
       - name: Check bins
-        run: which nx bunx npx
+        run: which nx
       - name: Configure .env
         run: |
           cd apps/mobile/

@@ -87,7 +87,7 @@ jobs:
           cat .env
       - name: Install Module Dependencies
         run: |
-          go mod download
+          go mod tidy
           go mod verify
       - name: Build api
         run: GIN_MODE=release bunx nx build api

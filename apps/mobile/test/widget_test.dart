@@ -295,16 +295,17 @@ Future<void> main() async {
       bool wasCalled = false;
       final cubit = AppCubit();
       late String barcodeValue = '';
+      AuthenticatorResponse? response;
       await tester.pumpWidget(
         MaterialApp(
           home: BlocProvider(
             create: (context) => cubit,
             child: Scaffold(
               body: BlocConsumer<AppCubit, AppState>(
-                listener: (context, state) {
+                listener: (context, state) async {
                   if (state.code != null) {
                     mockController.pause();
-                    mockAuth.verifyCode(state);
+                    response = await mockAuth.verifyCode(state);
                   }
                 },
                 builder: (context, state) {
@@ -335,12 +336,15 @@ Future<void> main() async {
           displayValue: 'barcode',
         )),
       ));
-      await tester.pump();
 
+      await tester.pump();
       expect(wasCalled, true);
 
       await tester.pump();
       expect(barcodeValue, 'barcode');
+
+      await tester.pump();
+      expect(response, {'ok': true, 'status': 200, 'error': null});
 
       await barcodeStreamController.close();
     });

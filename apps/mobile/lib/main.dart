@@ -10,7 +10,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-
 Future main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -74,13 +73,8 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  late bool ready;
-  late bool verified;
-  late bool loading;
-  late int status;
-  bool shouldStartManually = false;
-
+typedef AuthenticatorResponse = Map<String, Object?>;
+class Authenticator {
   Future<UserCredential> signInWithGoogle() async {
     final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
 
@@ -110,6 +104,9 @@ class _MyHomePageState extends State<MyHomePage> {
         'email': email,
       }),
     );
+    if (!context.mounted) {
+      return;
+    }
 
     debugPrint('response: ${response.body}');
     if (response.statusCode == 200) {
@@ -121,23 +118,7 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  MobileScannerController? controller;
-
-  MobileScannerController initController() => MobileScannerController(
-    autoStart: false,
-    cameraResolution: const Size(1920, 1080),
-    detectionSpeed: DetectionSpeed.unrestricted,
-    detectionTimeoutMs: 1000,
-    autoZoom: true,
-    invertImage: false,
-    returnImage: false,
-  );
-
-  Future<void> verifyCode(BuildContext context, AppState state) async {
-    if (!context.mounted) {
-      return;
-    }
-    if (!loading) return;
+  Future<AuthenticatorResponse?> verifyCode(AppState state) async {
     var apiHost = dotenv.env['API_HOST'] ?? '';
     var secret = dotenv.env['API_SECRET'] ?? '';
     final response = await http.post(
@@ -152,37 +133,79 @@ class _MyHomePageState extends State<MyHomePage> {
         'code': state.code!,
       }),
     );
-    if (!context.mounted) {
-      return;
-    }
 
     var verifyOk = response.statusCode == 200;
+    final resp = AuthenticatorResponse();
     if (!verifyOk) {
+      debugPrint('error status: ${response.statusCode}');
       try {
         var responseBody = jsonDecode(response.body) as Map<String, dynamic>;
         var error = responseBody['error'];
         debugPrint('Error response from Server: $error');
-        setState(() {
-          status = response.statusCode;
-          loading = false;
-          verified = false;
-        });
-        return;
+        resp.addAll({'ok': false, 'status': response.statusCode, 'error': error});
+        return resp;
       } catch (e) {
-        //
+        debugPrint('error: $e');
+        resp.addAll({'ok': false, 'status': response.statusCode});
+        return resp;
       }
+    }
+    resp.addAll({'ok': verifyOk, 'status': response.statusCode});
+    return resp;
+  }
+
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  late bool ready;
+  late bool verified;
+  late bool loading;
+  late int status;
+  bool shouldStartManually = false;
+
+  Authenticator? authenticator;
+  MobileScannerController? controller;
+
+  MobileScannerController initController() => MobileScannerController(
+    autoStart: false,
+    cameraResolution: const Size(1920, 1080),
+    detectionSpeed: DetectionSpeed.unrestricted,
+    detectionTimeoutMs: 1000,
+    autoZoom: true,
+    invertImage: false,
+    returnImage: false,
+  );
+
+  Future<void> verifyCode(BuildContext context, AppState state) async {
+    if (!loading) return;
+    final AuthenticatorResponse? response = await authenticator?.verifyCode(state);
+    if (!context.mounted) {
+      return;
+    }
+    debugPrint('$response');
+    bool? ok = response?['ok'] as bool;
+    int? statusCode = response?['status'] as int;
+    if (!ok) {
+      String? error = response?['error'] as String;
+      debugPrint('Error response from Server: $error');
+      setState(() {
+        status = statusCode;
+        loading = false;
+        verified = false;
+      });
     }
     context.read<AppCubit>().updateState('ready');
     setState(() {
-      status = response.statusCode;
+      status = statusCode;
       loading = false;
-      verified = verifyOk;
+      verified = ok;
     });
   }
 
   @override
   void initState() {
     super.initState();
+    authenticator = Authenticator();
     FirebaseAuth.instance
         .authStateChanges()
         .listen((User? user) {
@@ -233,6 +256,14 @@ class _MyHomePageState extends State<MyHomePage> {
                     scanWindow: scanWindow,
                     controller: controller,
                     fit: BoxFit.contain,
+                    onDetect: (capture) {
+                      final scannedBarcodes = capture.barcodes;
+                      final String values = scannedBarcodes
+                          .map((e) => e.displayValue)
+                          .join('\n');
+
+                      context.read<AppCubit>().updateCode(values);
+                    },
                   ),
                   BarcodeOverlay(
                     boxFit: BoxFit.contain,
@@ -326,7 +357,7 @@ class _MyHomePageState extends State<MyHomePage> {
             ListTile(
               title: Text('Log in'),
               onTap: () {
-                login(context);
+                authenticator?.login(context);
               },
             ),
           ],
@@ -334,11 +365,11 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          login(context);
+          authenticator?.login(context);
         },
         tooltip: 'Log in',
         child: const Icon(Icons.lock),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      ),
     );
   }
 }
@@ -367,7 +398,7 @@ class ScannedBarcodeLabel extends StatelessWidget {
           );
         }
 
-        context.read<AppCubit>().updateCode(values);
+        // context.read<AppCubit>().updateCode(values);
 
         return Text(
           values.isEmpty ? 'No display value' : values,

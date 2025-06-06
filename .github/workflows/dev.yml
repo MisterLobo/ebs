@@ -36,6 +36,10 @@ jobs:
         with:
           ref: develop
 
+      - name: Build and Test
+        run: |
+          nx build api
+          nx test api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -87,25 +91,40 @@ jobs:
       - name: Setup Firebase
         uses: w9jds/setup-firebase@main
         with:
-          gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
-          firebase_token: ${{ secrets.FIREBASE_TOKEN }}
-      - run: |
+          gcp_sa_key: ${{ env.GCP_SA_KEY }}
+          firebase_token: ${{ env.FIREBASE_TOKEN }}
+      - name: Check Firebase CLI installation
+        run: firebase -V
+      - name: Configure .env
+        run: |
           cd apps/mobile/
-          pwd
-          ls -al
-          firebase projects:list
-      - name: Set up Flutter
+          cat << EOF > .env
+          API_HOST=${{ env.API_HOST }}
+          API_SECRET=${{ env.API_SECRET }}
+          EOF
+      - name: Setup Flutterfire
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: 3.29.3
-      - run: flutter --version
       - run: |
           cd apps/mobile/
-          touch .env
-          echo ${{ vars.API_HOST }} > .env
-          echo ${{ secrets.API_SECRET }} >> .env
+          echo ${{ env.FIREBASE_PROJECT_ID }} > .firebaserc
+          ls -al
+          dart pub global activate flutterfire_cli
+          flutterfire --version
+          flutterfire configure -y -p ${{ env.FIREBASE_PROJECT_ID }} -t ${{ env.FIREBASE_TOKEN }} --platforms="android"
+          ls -al
+      - name: Install -> Build -> Test app
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.29.3
+      - run: |
+          cd apps/mobile/
+          ls -al
+          flutter --version
           flutter pub get
           flutter test
           flutter build apk
-          flutter build aab
+          # flutter build aab

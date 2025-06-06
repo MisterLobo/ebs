@@ -23,6 +23,11 @@ env:
                                                       # file, e.g. .aws/task-definition.json
   CONTAINER_NAME: ebs-api-skynet-test                 # set this to the name of the container in the
                                                       # containerDefinitions section of your task definition
+  API_HOST: ${{ vars.API_HOST }}
+  API_SECRET: ${{ secrets.API_SECRET }}
+  FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+  GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+  FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
 jobs:
   deploy:
@@ -36,18 +41,16 @@ jobs:
         with:
           ref: develop
 
-      - name: Setup NodeJS
+      - name: Setup Bun
         run: |
-          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-          \. "$HOME/.nvm/nvm.sh"
-          nvm install 24
-          node -v
-          nvm current
+          curl -fsSL https://bun.sh/install | bash
+          bun install
       - name: Build and Test
         run: |
-          npm -v
-          npx nx build api
-          npx nx test api
+          ls -al
+          bun -v
+          bunx nx build api
+          bunx nx test api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

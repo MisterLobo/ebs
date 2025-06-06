@@ -36,10 +36,18 @@ jobs:
         with:
           ref: develop
 
+      - name: Setup NodeJS
+        run: |
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+          \. "$HOME/.nvm/nvm.sh"
+          nvm install 24
+          node -v
+          nvm current
       - name: Build and Test
         run: |
-          nx build api
-          nx test api
+          npm -v
+          npx nx build api
+          npx nx test api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

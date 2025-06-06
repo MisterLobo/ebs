@@ -247,6 +247,14 @@ func (s *TestSuite) TestAuthRoutes() {
 	jbody := map[string]any{
 		"email": "someone@example.com",
 	}
+	envSecret := os.Getenv("API_SECRET")
+	envJwt := os.Getenv("JWT_SECRET")
+
+	assert.Equal(s.T(), envSecret, "secret")
+	assert.Equal(s.T(), envJwt, "secret")
+	assert.Equal(s.T(), secret, envSecret)
+	assert.Equal(s.T(), "secret", envJwt)
+
 	sbody, _ := json.Marshal(&jbody)
 	loginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(sbody)))
 	loginReq.Header.Set("x-secret", secret)

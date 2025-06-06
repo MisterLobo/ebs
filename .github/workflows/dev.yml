@@ -79,7 +79,7 @@ jobs:
         run: |
           cd apps/api/
           cat << EOF > .env
-          API_HOST=http://localhost:3000
+          APP_HOST=http://localhost:3000
           API_SECRET=secret
           EOF
       - name: Build and Test

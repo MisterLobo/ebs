@@ -75,11 +75,18 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
       - run: bun install
+      - name: Configure .env
+        run: |
+          cd apps/api/
+          cat << EOF > .env
+          API_HOST=http://localhost:3000
+          API_SECRET=secret
+          EOF
       - name: Build and Test
         run: |
           pwd
-          bunx nx build api
-          bunx nx test api
+          GIN_MODE=release bunx nx build api
+          GIN_MODE=release bunx nx test api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

@@ -91,10 +91,10 @@ jobs:
           go mod tidy
           go mod download
           go mod verify
-      - name: Build api
-        run: GIN_MODE=release bunx nx build api
       - name: Test api
         run: bunx nx test api
+      - name: Build api
+        run: GIN_MODE=release bunx nx build api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

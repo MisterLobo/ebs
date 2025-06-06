@@ -81,12 +81,18 @@ jobs:
           cat << EOF > .env
           APP_HOST=http://localhost:3000
           API_SECRET=secret
+          JWT_SECRET=secret
           EOF
-      - name: Build and Test
+          ls -al
+          cat .env
+      - name: Install Module Dependencies
         run: |
-          pwd
-          GIN_MODE=release bunx nx build api
-          GIN_MODE=release bunx nx test api
+          go mod download
+          go mod verify
+      - name: Build api
+        run: GIN_MODE=release bunx nx build api
+      - name: Test api
+        run: bunx nx test api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

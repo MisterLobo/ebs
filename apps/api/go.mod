@@ -5,6 +5,7 @@ go 1.23.4
 require (
 	ariga.io/atlas-provider-gorm v0.5.2
 	firebase.google.com/go v3.13.0+incompatible
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.29.14
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3

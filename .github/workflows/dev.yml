@@ -31,7 +31,7 @@ env:
 
 jobs:
   deploy:
-    name: Deploy
+    name: Build Test Deploy
     runs-on: ubuntu-latest
     environment: staging
 
@@ -42,13 +42,11 @@ jobs:
           ref: develop
 
       - name: Setup Bun
-        run: |
-          curl -fsSL https://bun.sh/install | bash
-          bun install
+        uses: oven-sh/setup-bun@v2
+      - run: bun install
       - name: Build and Test
         run: |
-          ls -al
-          bun -v
+          pwd
           bunx nx build api
           bunx nx test api
       - name: Configure AWS credentials
@@ -92,7 +90,7 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
   mobile_debug_build:
-    name: Mobile app debug build
+    name: Build and Test mobile app
     runs-on: ubuntu-latest
     environment: staging
     steps:

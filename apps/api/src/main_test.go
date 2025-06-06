@@ -99,6 +99,9 @@ func authMiddleware(ctx *gin.Context) {
 }
 
 func (s *TestSuite) SetupSuite() {
+	os.Setenv("API_SECRET", "secret")
+	os.Setenv("JWT_SECRET", "secret")
+
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
 		v.RegisterValidation("bookabledate", eventDateTimeValidatorFunc)
 		v.RegisterValidation("gtdate", gtfield)

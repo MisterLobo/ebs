@@ -28,6 +28,7 @@ env:
   FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
   FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+  ADMIN_SDK_CREDENTIALS: ${{ secrets.ADMIN_SDK_CREDENTIALS }}
 
 jobs:
   deploy:
@@ -91,6 +92,10 @@ jobs:
           go mod tidy
           go mod download
           go mod verify
+      - name: Get credentials
+        run: |
+          cd apps/api/src
+          base64 -d <<< ${{ env.ADMIN_SDK_CREDENTIALS }} > admin-sdk-credentials.json
       - name: Test api
         run: bunx nx test api
       - name: Build api

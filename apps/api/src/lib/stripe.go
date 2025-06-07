@@ -20,6 +20,10 @@ func GetStripeClient() *stripe.Client {
 	return sc
 }
 
+func NewStripeClient(c *stripe.Client) {
+	stripeClient = c
+}
+
 func CreatePaymentLink(priceId string) (string, error) {
 	sc := GetStripeClient()
 	params := stripe.PaymentLinkCreateParams{

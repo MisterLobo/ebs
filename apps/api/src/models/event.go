@@ -16,14 +16,14 @@ type Event struct {
 	About       *string           `json:"about,omitempty"`
 	Type        string            `gorm:"default:'general'" json:"type"`
 	Location    string            `json:"location,omitempty"`
-	DateTime    time.Time         `json:"date_time,omitempty"`
+	DateTime    *time.Time        `json:"date_time,omitempty"`
 	Status      types.EventStatus `gorm:"default:'draft'" json:"status,omitempty"` // `json:"status"`
 	OrganizerID uint              `json:"organizer,omitempty"`
 	Seats       uint              `json:"seats,omitempty"`
 	CreatedBy   uint              `json:"created_by,omitempty"`
 	Mode        string            `gorm:"default:'default'" json:"mode,omitempty"`
 	OpensAt     *time.Time        `json:"opens_at,omitempty"`
-	Deadline    time.Time         `json:"deadline,omitempty"`
+	Deadline    *time.Time        `json:"deadline,omitempty"`
 	Metadata    *types.Metadata   `gorm:"type:jsonb" json:"metadata,omitempty"`
 	Identifier  *string           `json:"resource_id"`
 	TenantID    *uuid.UUID        `gorm:"type:uuid" json:"-"`

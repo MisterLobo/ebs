@@ -67,7 +67,7 @@ func bookingHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			idParam := ctx.Params.ByName("id")
 			atoi, err := strconv.Atoi(idParam)
 			if err != nil {
-				log.Printf(err.Error())
+				log.Print(err.Error())
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
@@ -85,7 +85,7 @@ func bookingHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				First(&booking).
 				Error
 			if err != nil {
-				log.Printf(err.Error())
+				log.Print(err.Error())
 				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}

@@ -4,6 +4,7 @@ import (
 	"ebs/src/db"
 	"ebs/src/models"
 	"ebs/src/types"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -35,7 +36,7 @@ func AuthMiddleware(ctx *gin.Context) {
 	if err != nil {
 		log.Printf("token error: %s\n", err.Error())
 		if err == jwt.ErrSignatureInvalid || err == jwt.ErrTokenMalformed {
-			ctx.AbortWithStatus(http.StatusUnauthorized)
+			ctx.AbortWithError(http.StatusUnauthorized, errors.New("Unauthorized"))
 			return
 		}
 		ctx.AbortWithError(http.StatusUnauthorized, err)

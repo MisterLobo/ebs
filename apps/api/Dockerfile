@@ -4,7 +4,7 @@ WORKDIR /usr/src/workdir
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 COPY . .
-RUN go build -v -o dist/api src/main.go
+RUN go build -v -o dist/api src/*.go
 
 FROM base AS final
 WORKDIR /dist

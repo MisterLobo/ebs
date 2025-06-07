@@ -33,7 +33,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			var tickets []models.Ticket
 			db := db.GetDb()
 			if err := db.
-				Where(&models.Ticket{Event: models.Event{OrganizerID: orgId}}).
+				Where(&models.Ticket{Event: &models.Event{OrganizerID: orgId}}).
 				Order("created_at desc").
 				Find(&tickets).Error; err != nil {
 				log.Printf("Error retrieving Events: %s\n", err.Error())
@@ -52,7 +52,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			var ticket models.Ticket
 			db := db.GetDb()
 			if err := db.
-				Where(&models.Ticket{ID: params.ID, Event: models.Event{OrganizerID: orgId}}).
+				Where(&models.Ticket{ID: params.ID, Event: &models.Event{OrganizerID: orgId}}).
 				Preload("Event").
 				First(&ticket).
 				Error; err != nil {
@@ -155,7 +155,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return err
 				}
 				now := time.Now()
-				if now.After(reservation.Booking.Event.DateTime) {
+				if now.After(*reservation.Booking.Event.DateTime) {
 					err := errors.New("Ticket is no longer valid")
 					log.Printf("Error: %s\n", err.Error())
 					return err
@@ -223,7 +223,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			db := db.GetDb()
 			if err := db.
 				Model(&models.Ticket{}).
-				Where(&models.Ticket{ID: ticketId, Event: models.Event{OrganizerID: orgId}}).
+				Where(&models.Ticket{ID: ticketId, Event: &models.Event{OrganizerID: orgId}}).
 				First(&ticket).
 				Error; err != nil {
 				log.Printf("Error retrieving Ticket [%d]: %s\n", ticketId, err.Error())
@@ -261,7 +261,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			db := db.GetDb()
 			if err := db.
 				Model(&models.Ticket{}).
-				Where(&models.Ticket{ID: ticketId, Event: models.Event{OrganizerID: orgId}}).
+				Where(&models.Ticket{ID: ticketId, Event: &models.Event{OrganizerID: orgId}}).
 				First(&ticket).
 				Error; err != nil {
 				log.Printf("Error retrieving Ticket [%d]: %s\n", ticketId, err.Error())

@@ -54,7 +54,7 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 		Name:        params.Name,
 		About:       &params.Description,
 		Location:    params.Location,
-		DateTime:    dateTime,
+		DateTime:    &dateTime,
 		Seats:       params.Seats,
 		OrganizerID: organizationId,
 		CreatedBy:   creatorId,
@@ -83,7 +83,7 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 			deadline.Location(),
 		)
 		log.Printf("dateTime: Local=%s", deadline.String())
-		event.Deadline = deadline
+		event.Deadline = &deadline
 		if params.OpensAt != nil {
 			opensAt, err := time.Parse(config.TIME_PARSE_FORMAT, *params.OpensAt)
 			if err != nil {
@@ -613,7 +613,7 @@ func CreateReservation(ctx *gin.Context, params *types.CreateBookingRequestBody,
 				reservation := models.Reservation{
 					TicketID:   v.TicketID,
 					BookingID:  r.ID,
-					ValidUntil: expirationTime,
+					ValidUntil: &expirationTime,
 					TenantID:   &tenantId,
 				}
 				err = tx.Create(&reservation).Error

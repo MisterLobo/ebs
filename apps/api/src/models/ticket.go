@@ -33,7 +33,7 @@ type Ticket struct {
 	Identifier    *string         `json:"resource_id"`
 	TenantID      *uuid.UUID      `gorm:"type:uuid" json:"-"`
 
-	Event    Event     `json:"event,omitempty"`
+	Event    *Event    `json:"event,omitempty"`
 	Bookings []Booking `gorm:"many2many:reservations;" json:"bookings,omitempty"`
 
 	Stats *TicketStats `gorm:"-" json:"stats,omitempty"`

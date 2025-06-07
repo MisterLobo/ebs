@@ -1,0 +1,72 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+# GitHub recommends pinning actions to a commit SHA.
+# To get a newer version, you will need to update the SHA.
+# You can also reference a tag or branch, but the action may change without warning.
+
+name: Build mobile application
+
+on:
+  push:
+    branches:
+      - mobile
+
+env:
+  API_HOST: ${{ vars.API_HOST }}
+  API_SECRET: ${{ secrets.API_SECRET }}
+  FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+  GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+  FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
+jobs:
+  mobile_debug_build:
+    name: Mobile app debug build
+    runs-on: ubuntu-latest
+    environment: develop
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+      - name: Setup Firebase
+        uses: w9jds/setup-firebase@main
+        with:
+          gcp_sa_key: ${{ env.GCP_SA_KEY }}
+          firebase_token: ${{ env.FIREBASE_TOKEN }}
+      - name: Check Firebase CLI installation
+        run: firebase -V
+      - name: Configure .env
+        run: |
+          cd apps/mobile/
+          cat << EOF > .env
+          API_HOST=${{ env.API_HOST }}
+          API_SECRET=${{ env.API_SECRET }}
+          EOF
+      - name: Setup Flutterfire
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.29.3
+      - run: |
+          cd apps/mobile/
+          echo ${{ env.FIREBASE_PROJECT_ID }} > .firebaserc
+          ls -al
+          dart pub global activate flutterfire_cli
+          flutterfire --version
+          flutterfire configure -y -p ${{ env.FIREBASE_PROJECT_ID }} -t ${{ env.FIREBASE_TOKEN }} --platforms="android"
+          ls -al
+      - name: Install -> Build -> Test app
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.29.3
+      - run: |
+          cd apps/mobile/
+          ls -al
+          flutter --version
+          flutter pub get
+          flutter test
+          flutter build apk
+          # flutter build aab

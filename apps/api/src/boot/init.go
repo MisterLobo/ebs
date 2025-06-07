@@ -72,13 +72,15 @@ func InitBroker() {
 		go common.SQSConsumers()
 		go common.SNSSubscribes()
 	} else {
-		var h1 types.Handler = common.KafkaEventsToOpenConsumer
-		go lib.KafkaConsumer("events", "EventsToOpen", &h1)
-		var h2 types.Handler = common.KafkaEventsToCloseConsumer
-		go lib.KafkaConsumer("events", "EventsToClose", &h2)
-		var h3 types.Handler = common.KafkaEventsToCompleteConsumer
-		go lib.KafkaConsumer("events", "EventsToComplete", &h3)
-		go lib.KafkaCreateTopics("events-open", "events-close", "EventsToOpen", "EventsToClose", "EventsToComplete")
+		var eventsToOpenConsumer types.Handler = common.KafkaEventsToOpenConsumer
+		go lib.KafkaConsumer("events", "EventsToOpen", &eventsToOpenConsumer)
+		var eventsToCloseConsumer types.Handler = common.KafkaEventsToCloseConsumer
+		go lib.KafkaConsumer("events", "EventsToClose", &eventsToCloseConsumer)
+		var eventsToCompleteConsumer types.Handler = common.KafkaEventsToCompleteConsumer
+		go lib.KafkaConsumer("events", "EventsToComplete", &eventsToCompleteConsumer)
+		var emailsToSendConsumer types.Handler = common.EmailsToSendConsumer
+		go lib.KafkaConsumer("emails", "EmailsToSend", &emailsToSendConsumer)
+		go lib.KafkaCreateTopics("events-open", "events-close", "EventsToOpen", "EventsToClose", "EventsToComplete", "EmailsToSend")
 	}
 	go lib.TestRedis()
 
@@ -114,20 +116,6 @@ func InitScheduler() {
 	jobsWaitingInQueue := len(sched.Jobs())
 	log.Println("Jobs in queue:", jobsWaitingInQueue)
 	log.Printf("Job ID: %s %s\n", j.Name(), j.ID().String())
-	/* j, err := sched.NewJob(
-		gocron.DurationJob(10*time.Second),
-		gocron.NewTask(func(a string, b int) {
-			log.Printf("%s, %d\n", a, b)
-			lib.KafkaProduceMessage("topic1", map[string]any{
-				a: b,
-			})
-		}, "hello", 1),
-	)
-	if err != nil {
-		log.Printf("Error running job: %s", err.Error())
-		return
-	}
-	log.Printf("Job ID: %s\n", j.ID().String()) */
 	sched.Start()
 }
 

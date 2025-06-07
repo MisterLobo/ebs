@@ -30,8 +30,8 @@ type User struct {
 	LastActive           *time.Time      `json:"last_active,omitempty"`
 	TenantID             *uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex" json:"-"`
 
-	Bookings      []Booking      `gorm:"foreignKey:user_id" json:"bookings,omitempty"`
-	Organizations []Organization `gorm:"foreignKey:owner_id" json:"organizations,omitempty"`
+	Bookings      []*Booking      `gorm:"foreignKey:user_id" json:"bookings,omitempty"`
+	Organizations []*Organization `gorm:"foreignKey:owner_id" json:"organizations,omitempty"`
 	// Subscriptions []*Event       `gorm:"many2many:event_subscriptions;" json:"subscriptions,omitempty"`
 	Teams []*Team `gorm:"many2many:team_members;" json:"teams,omitempty"`
 

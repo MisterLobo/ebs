@@ -26,3 +26,7 @@ func GetDb() *gorm.DB {
 	db = _db
 	return _db
 }
+
+func NewDB(newdb *gorm.DB) {
+	db = newdb
+}

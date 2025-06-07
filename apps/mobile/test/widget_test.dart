@@ -232,40 +232,42 @@ Future<void> main() async {
       await barcodeStreamController.close();
     });
     testWidgets('Scanner should read code', (WidgetTester tester) async {
-      bool loginWasTapped = false;
       bool wasCalled = false;
+      late String barcodeValue = '';
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: Center(
               child: MobileScanner(
                 controller: mockController,
-                onDetect: (_) {
+                onDetect: (capture) {
                   wasCalled = true;
+
+                  final scannedBarcodes = capture.barcodes;
+                  final String values = scannedBarcodes
+                    .map((e) => e.displayValue)
+                    .join('\n');
+
+                  barcodeValue = values;
                 },
               ),
-            ),
-            floatingActionButton: FloatingActionButton(
-              onPressed: () {
-                loginWasTapped = true;
-              },
-              tooltip: 'Log in',
-              child: const Icon(Icons.lock),
             ),
           ),
         ),
       );
 
-      barcodeStreamController.add(const BarcodeCapture());
-      await tester.pump();
+      barcodeStreamController.add(BarcodeCapture(
+        barcodes: List.generate(1, (int index) => Barcode(
+          displayValue: 'test',
+        )),
+      ));
 
+      await tester.pump();
       expect(wasCalled, true);
 
-      // Tap the 'lock' icon and trigger a frame.
-      await tester.tap(find.byIcon(Icons.lock));
       await tester.pump();
+      expect(barcodeValue, 'test');
 
-      expect(loginWasTapped, true);
       await barcodeStreamController.close();
     });
     testWidgets('login should work', (WidgetTester tester) async {

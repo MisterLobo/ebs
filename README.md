@@ -9,9 +9,9 @@
 [Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/next?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `bunx nx graph` to visually explore what was created. Now, let's get you up to speed!
 
 # ABOUT
-Live Demo: https://silver-elven.cc
+Live Demo: https://app.silver-elven.cc
 
-Silver Elven is an event booking system that aims to provide a platform for hosting events, buying and selling tickets with a simple and easy-to-use user interface. This platform is focused on events that are open and do not have reservations that depend on seating arrangements. In other words, this is intended for a first-come first-served or General Admission events only.
+Silver Elven is an event booking system that aims to provide a platform for hosting events, buying and selling tickets with a simple and easy-to-use user interface. This platform is focused on events that are open and do not require reservations that depend on seating arrangements. In other words, this is intended for a first-come first-served or General Admission events only.
 
 ## Project Details
 This is a monorepo using Nx for running, testing and managing projects
@@ -22,7 +22,7 @@ This is a monorepo using Nx for running, testing and managing projects
 ### Tech Stack
 - Web Application: NextJS, TailwindCSS, Shadcn, Radix
 - Web Server: Go using Gin framework
-- Mobile App: Flutter (Android only)
+- Mobile App: Flutter (tested with Android only)
 - Services integrated:
   - Stripe for Payments
   - AWS (ECS, EventBridge Scheduler, SQS, SNS, RDS, S3, ECR, EC2, VPC, SES)

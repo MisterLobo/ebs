@@ -30,6 +30,7 @@ env:
   FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
   ADMIN_SDK_CREDENTIALS: ${{ secrets.ADMIN_SDK_CREDENTIALS }}
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099"
+  REDIS_HOST: "redis://localhost:6379"
 
 jobs:
   deploy:

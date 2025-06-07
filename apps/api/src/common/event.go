@@ -348,3 +348,38 @@ func EventsToCompleteConsumer() {
 	})
 	c.Listen()
 }
+
+func EmailsToSendConsumer(spayload string) {
+	val := gjson.Get(spayload, "id")
+	topic := gjson.Get(spayload, "topic").String()
+	if !gjson.Valid(spayload) {
+		log.Printf("[%s]: Received invalid json body. Aborting", topic)
+		return
+	}
+	log.Printf("[%s] val: %f\n", topic, val.Float())
+	payloadId := gjson.Get(spayload, "payloadId").String()
+	var payload types.JSONB
+	if err := json.Unmarshal([]byte(spayload), &payload); err != nil {
+		log.Printf("[%s] Error deserializing JSON: %s\n", topic, err.Error())
+		return
+	}
+	eventId := uint(val.Int())
+	log.Printf("eventId: %d\n", eventId)
+	// UPDATE JOB
+	go func() {
+		db := db.GetDb()
+		err := db.Transaction(func(tx *gorm.DB) error {
+			err := tx.
+				Where(&models.JobTask{PayloadID: payloadId}).
+				Updates(&models.JobTask{Status: "done"}).
+				Error
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			log.Printf("Error updating event status: %s\n", err.Error())
+		}
+	}()
+}

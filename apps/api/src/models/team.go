@@ -13,10 +13,10 @@ type Team struct {
 	OrganizationID uint   `json:"organization_id,omitempty"`
 	Status         string `json:"status,omitempty"`
 
-	Owner        User         `gorm:"foreignKey:owner_id" json:"-"`
-	Organization Organization `gorm:"foreignKey:organization_id" json:"-"`
-	Members      []*User      `gorm:"many2many:team_members;References:ID;joinReferences:UserID" json:"members,omitempty"`
-	TenantID     *uuid.UUID   `gorm:"type:uuid" json:"-"`
+	Owner        User          `gorm:"foreignKey:owner_id" json:"-"`
+	Organization *Organization `gorm:"foreignKey:organization_id" json:"-"`
+	Members      []*User       `gorm:"many2many:team_members;References:ID;joinReferences:UserID" json:"members,omitempty"`
+	TenantID     *uuid.UUID    `gorm:"type:uuid" json:"-"`
 
 	types.Timestamps
 }

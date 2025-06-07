@@ -15,8 +15,8 @@ type Admission struct {
 	Status        string     `json:"status,omitempty"`
 	TenantID      *uuid.UUID `gorm:"type:uuid" json:"-"`
 
-	Reservation Reservation `json:"reservation,omitempty"`
-	AdmittedBy  *User       `gorm:"foreignKey:by" json:"-"`
+	Reservation *Reservation `json:"reservation,omitempty"`
+	AdmittedBy  *User        `gorm:"foreignKey:by" json:"-"`
 
 	types.Timestamps
 }

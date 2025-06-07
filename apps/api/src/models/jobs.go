@@ -29,18 +29,8 @@ type JobTask struct {
 func (self *JobTask) CreateAndEnqueueJobTask(jobTask JobTask) (string, error) {
 	var jobID string
 	db := db.GetDb()
-	// now := time.Now().UTC()
-	// in5m := now.Add(5 * time.Minute)
-	// strnow := in5m.Format("2006-01-02T15:04:05")
 	err := db.Transaction(func(tx *gorm.DB) error {
 		eventId := jobTask.HandlerParams[0]
-		/* pBytes, err := json.Marshal(jobTask.Payload)
-		if err != nil {
-			log.Printf("Failed to marshal payload: %s\n", err.Error())
-			return err
-		} */
-		// sRunsAt := jobTask.RunsAt.Format("2006-01-02T15:04:05")
-		// sPayload := string(pBytes)
 		clientId := jobTask.Payload["producerClientId"].(string)
 		params := map[string]string{
 			"name":     jobTask.Name,
@@ -48,7 +38,6 @@ func (self *JobTask) CreateAndEnqueueJobTask(jobTask JobTask) (string, error) {
 			"topic":    jobTask.Topic,
 		}
 		sid, err := lib.NewScheduledJob(jobTask.RunsAt, params, jobTask.Payload)
-		// sid, err := lib.CreateSchedule(jobTask.Name, jobTask.RunsAt, sRunsAt, jobTask.Topic, sPayload)
 		if err != nil {
 			log.Printf("Error creating job for Event: id=%d error=%s\n", eventId, err.Error())
 			return err

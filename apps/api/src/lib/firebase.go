@@ -6,8 +6,8 @@ import (
 	"os"
 	"path"
 
-	firebase "firebase.google.com/go"
-	"firebase.google.com/go/auth"
+	firebase "firebase.google.com/go/v4"
+	"firebase.google.com/go/v4/auth"
 	"google.golang.org/api/option"
 )
 
@@ -42,7 +42,7 @@ func GetFirebaseAuth() (*auth.Client, error) {
 
 func NewFirebaseApp(app *firebase.App) {
 	innerApp = app
-	auth, err := app.Auth(context.Background())
+	auth, err := innerApp.Auth(context.Background())
 	if err != nil {
 		log.Fatalf("error initializing Firebase Auth: %s\n", err.Error())
 	}

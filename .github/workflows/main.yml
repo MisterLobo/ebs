@@ -1,12 +1,3 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# GitHub recommends pinning actions to a commit SHA.
-# To get a newer version, you will need to update the SHA.
-# You can also reference a tag or branch, but the action may change without warning.
-
 name: Deploy to Amazon ECS
 
 on:
@@ -28,21 +19,94 @@ env:
   FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
   FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+  ADMIN_SDK_CREDENTIALS: ${{ secrets.ADMIN_SDK_CREDENTIALS }}
+  FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099"
+  REDIS_HOST: "redis://localhost:6379"
 
 jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
     environment: production
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      stripe:
+        image: stripe/stripe-mock:latest
+        ports:
+          - 12111-12112:12111-12112
+      firebase:
+        image: andreysenov/firebase-tools
+        ports:
+          - 9099:9099
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Build and Test
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - name: Configure .env
         run: |
-          GIN_MODE=release nx build api
-          GIN_MODE=release nx test api
+          cd apps/api/
+          cat << EOF > .env
+          APP_HOST=http://localhost:3000
+          API_SECRET=secret
+          JWT_SECRET=secret
+          EOF
+          ls -al
+          cat .env
+      - name: Setup Firebase
+        uses: w9jds/setup-firebase@main
+        with:
+          gcp_sa_key: ${{ env.GCP_SA_KEY }}
+          firebase_token: ${{ env.FIREBASE_TOKEN }}
+      - name: Start Firebase Emulator Suite
+        uses: invertase/firebase-emulator-action@main
+        with:
+          firebase-tools-version: 'latest'
+          emulators: 'auth'
+          project-id: ${{ env.FIREBASE_PROJECT_ID }}
+          max-retries: '3'
+          max-checks: '60'
+          wait-time: '1'
+          check-port: '9099'
+      - name: Install Module Dependencies
+        run: |
+          cd apps/api/
+          go mod tidy
+          go mod download
+          go mod verify
+      - name: Get credentials
+        run: |
+          cd apps/api/src
+          base64 -d <<< ${{ env.ADMIN_SDK_CREDENTIALS }} > admin-sdk-credentials.json
+      - name: Test api
+        run: GIN_MODE=release bunx nx test api
+      - name: Build api
+        run: GIN_MODE=release bunx nx build api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -110,7 +174,8 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.29.3
-      - run: |
+      - name: Setup Flutterfire
+        run: |
           cd apps/mobile/
           echo ${{ env.FIREBASE_PROJECT_ID }} > .firebaserc
           ls -al
@@ -129,5 +194,5 @@ jobs:
           flutter --version
           flutter pub get
           flutter test
-          flutter build apk --split-per-abi
-          # flutter build aab --split-per-abi
+          flutter build apk
+          # flutter build aab

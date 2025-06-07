@@ -75,7 +75,7 @@ Fork this repo and clone it
 - Redis
 - Kafka - run `docker-compose up` using [docker-compose.yml](https://github.com/MisterLobo/ebs/docker-compose.yml) at the root of the repository
 - Install [atlas cli](https://atlasgo.io/guides/orms/gorm/getting-started) for gorm
-- AWS account to use its services (ECS, EC2, ECR, SQS, SNS, EventBridgeScheduler, etc.)
+- AWS account to use its services (ECS, EC2, ECR, SQS, SNS, S3, EventBridgeScheduler, etc.)
 
 ## Setup
 - for `ebs-app` install the dependencies with `bun install`
@@ -84,6 +84,9 @@ Fork this repo and clone it
 
 ## Database Migration
 - Run the scripts located at `apps/api/scripts` to manage migrations
+- If you use AWS RDS, you need to set up the ECS containers, RDS cluster and EC2 instance in the same VPC which is the recommended way and more secure than exposing the database publicly.
+- The EC2 instance will serve as the jumpbox for connecting to the RDS cluster from your local machine via SSH tunneling
+- Usage of RDS is not required. You can use any cloud db provider such as Neon or Supabase.
 
 ## Run tasks
 

@@ -71,13 +71,7 @@ jobs:
           # Maps tcp port 5432 on service container to the host
           - 6379:6379
       stripe:
-        image: stripe/stripe-mock
-        # Set health checks to wait until redis has started
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+        image: stripe/stripe-mock:latest
         ports:
           - 12111-12112:12111-12112
       firebase:

@@ -179,8 +179,6 @@ func (s *TestSuite) SetupSuite() {
 	db.NewDB(d)
 	s.DB = d
 
-	deleteAllTables()
-
 	err := d.AutoMigrate(
 		&models.User{},
 		&models.Organization{},
@@ -220,8 +218,6 @@ func (s *TestSuite) SetupSuite() {
 		},
 	))
 	lib.NewStripeClient(sc)
-
-	// projectId := os.Getenv("FBASE_PROJECT_ID")
 
 	app, _ := firebase.NewApp(context.Background(), &firebase.Config{
 		ProjectID: "projectId",

@@ -29,6 +29,7 @@ env:
   GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
   FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
   ADMIN_SDK_CREDENTIALS: ${{ secrets.ADMIN_SDK_CREDENTIALS }}
+  GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.ADMIN_SDK_CREDENTIALS }}
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099"
   REDIS_HOST: "redis://localhost:6379"
 
@@ -135,8 +136,8 @@ jobs:
           go mod verify
       - name: Get credentials
         run: |
-          cd apps/api/src
           base64 -d <<< ${{ env.ADMIN_SDK_CREDENTIALS }} > admin-sdk-credentials.json
+          cp ./admin-sdk-credentials.json apps/api/src
       - name: Test api
         run: GIN_MODE=release bunx nx test api
       - name: Build api

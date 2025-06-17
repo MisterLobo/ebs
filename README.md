@@ -38,7 +38,7 @@ This is a monorepo using Nx for running, testing and managing projects
 - Mobile App: Flutter (tested with Android only)
 - Services integrated:
   - Stripe for Payments
-  - AWS (ECS, EventBridge Scheduler, SQS, SNS, RDS, S3, ECR, EC2, VPC, SES)
+  - AWS (ECS, EventBridge Scheduler, SQS, SNS, RDS, S3, ECR, SES)
   - Vercel for hosting the web app
   - Redis for caching
   - Firebase for user and authentication

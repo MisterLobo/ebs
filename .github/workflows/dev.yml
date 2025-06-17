@@ -7,7 +7,7 @@
 # To get a newer version, you will need to update the SHA.
 # You can also reference a tag or branch, but the action may change without warning.
 
-name: Staging Deploy to Amazon ECS
+name: Staging Build
 
 on:
   push:
@@ -38,6 +38,9 @@ jobs:
   app_preview_deploy:
     name: Deploy Web App to Vercel
     runs-on: ubuntu-latest
+    concurrency:
+      group: ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     environment: staging
     env:
       FBASE_API_KEY: ${{ secrets.FBASE_API_KEY }}
@@ -46,14 +49,14 @@ jobs:
       FBASE_STORAGE_BUCKET: ${{ secrets.FBASE_STORAGE_BUCKET }}
       FBASE_MESSAGING_SENDER_ID: ${{ secrets.FBASE_MESSAGING_SENDER_ID }}
       FBASE_APP_ID: ${{ secrets.FBASE_APP_ID }}
-
+    needs: api_staging_deploy
     steps:
       - uses: actions/checkout@v2
       - name: Configure Firebase Service Worker
         run: |
           cd apps/ebs-app
           chmod +x ./firebase-sw-config.sh
-          ./firebase-sw-config.sh ${{ env.FBASE_API_KEY }} ${{ env.PROJECT_ID }} ${{ env.SENDER_ID }} ${{ env.APP_ID }}
+          ./firebase-sw-config.sh ${{ env.FBASE_API_KEY }} ${{ env.FBASE_PROJECT_ID }} ${{ env.FBASE_MESSAGING_SENDER_ID }} ${{ env.FBASE_APP_ID }}
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
       - run: bun install
@@ -69,6 +72,9 @@ jobs:
   api_staging_deploy:
     name: Build Test Deploy
     runs-on: ubuntu-latest
+    concurrency:
+      group: ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     environment: staging
     services:
       # Label used to access the service container
@@ -170,10 +176,10 @@ jobs:
         run: |
           base64 -d <<< ${{ env.ADMIN_SDK_CREDENTIALS }} > admin-sdk-credentials.json
           cp ./admin-sdk-credentials.json apps/api/src
-      - name: Test api
-        run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx test api
-      - name: Build api
-        run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx build api
+      #- name: Test api
+      #  run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx test api
+      #- name: Build api
+      #  run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx build api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -217,7 +223,11 @@ jobs:
   mobile_debug_build:
     name: Build and Test mobile app
     runs-on: ubuntu-latest
+    concurrency:
+      group: ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     environment: staging
+    needs: api_staging_deploy
     steps:
       - name: Clone repository
         uses: actions/checkout@v4

@@ -139,9 +139,9 @@ jobs:
           base64 -d <<< ${{ env.ADMIN_SDK_CREDENTIALS }} > admin-sdk-credentials.json
           cp ./admin-sdk-credentials.json apps/api/src
       - name: Test api
-        run: GIN_MODE=release bunx nx test api
+        run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx test api
       - name: Build api
-        run: GIN_MODE=release bunx nx build api
+        run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx build api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

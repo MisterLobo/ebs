@@ -138,9 +138,16 @@ func InitQueues() {
 	lib.SQSCreateQueue("PaymentsProcessing")
 	lib.SQSCreateQueue("ExpiredBookings")
 	lib.SQSCreateQueue("PaymentTransactionUpdates")
+	lib.SQSCreateQueue("PaymentTransactionUpdates")
 }
 func InitTopics() {
-	// lib.SNSCreateTopic("ExpiredBookings")
+	lib.SNSCreateTopic("EventsToOpen")
+	lib.SNSCreateTopic("EventsToClose")
+	lib.SNSCreateTopic("EventsToComplete")
+	lib.SNSCreateTopic("PendingTransactions")
+
+	emailQueue := os.Getenv("EMAIL_QUEUE")
+	lib.SNSCreateTopic(emailQueue)
 }
 
 func InitScheduler() {

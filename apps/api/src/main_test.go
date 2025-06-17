@@ -590,7 +590,9 @@ func (s *TestSuite) TestRegisterUser() {
 
 	token, err := newJwt(*s.UID)
 	assert.Nil(s.T(), err)
-	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
+	strBody := string(sbody)
+	log.Printf("strbody: %s\n", strBody)
+	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(strBody))
 	registerReq.Header.Set("Authorization", token)
 	router.ServeHTTP(w, registerReq)
 

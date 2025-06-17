@@ -341,6 +341,8 @@ func (s *TestSuite) SetupSuite() {
 	))
 	s.StripeClient = sc
 	lib.NewStripeClient(sc)
+	gac := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+	log.Printf("GAC: %d, %s\n", len(gac), gac)
 
 	// Mock Firebase app with emulator suite
 	app, _ := firebase.NewApp(context.Background(), &firebase.Config{

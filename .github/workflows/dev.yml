@@ -38,9 +38,6 @@ jobs:
   app_preview_deploy:
     name: Deploy Web App to Vercel
     runs-on: ubuntu-latest
-    concurrency:
-      group: ci-${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
     environment: staging
     env:
       FBASE_API_KEY: ${{ secrets.FBASE_API_KEY }}
@@ -72,9 +69,6 @@ jobs:
   api_staging_deploy:
     name: Build Test Deploy
     runs-on: ubuntu-latest
-    concurrency:
-      group: ci-${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
     environment: staging
     services:
       # Label used to access the service container
@@ -223,9 +217,6 @@ jobs:
   mobile_debug_build:
     name: Build and Test mobile app
     runs-on: ubuntu-latest
-    concurrency:
-      group: ci-${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
     environment: staging
     needs: api_staging_deploy
     steps:

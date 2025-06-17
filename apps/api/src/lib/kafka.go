@@ -50,12 +50,11 @@ func KafkaConsumers(groupId string, topics ...string) {
 	go func() {
 		log.Println("[BACKGROUND]: waiting for messages...")
 		run := true
-		for run == true {
+		for run {
 			ev := master.Poll(100)
 			switch e := ev.(type) {
 			case *kafka.Message:
 				log.Printf("message received: %s\n", string(e.Value))
-				break
 			case kafka.Error:
 				fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
 				run = false
@@ -90,14 +89,13 @@ func KafkaConsumer(groupId string, topic string, fn *types.Handler) {
 	go func() {
 		log.Println("[BACKGROUND]: waiting for messages...")
 		run := true
-		for run == true {
+		for run {
 			ev := master.Poll(100)
 			switch e := ev.(type) {
 			case *kafka.Message:
 				log.Printf("message received: %s\n", string(e.Value))
 				h := *fn
 				h(string(e.Value))
-				break
 			case kafka.Error:
 				fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
 				run = false
@@ -125,10 +123,12 @@ func KafkaProducer(clientId string) {
 	}
 
 	topic := "topic3"
-	err = p.Produce(&kafka.Message{
+	if err := p.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          []byte("test value"),
-	}, nil)
+	}, nil); err != nil {
+		log.Printf("Error producting message: %s\n", err.Error())
+	}
 }
 
 func KafkaProduceMessage(clientId, topic string, payload *types.JSONB) error {

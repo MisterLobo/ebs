@@ -25,12 +25,13 @@ type Event struct {
 	OpensAt     *time.Time        `json:"opens_at,omitempty"`
 	Deadline    *time.Time        `json:"deadline,omitempty"`
 	Metadata    *types.Metadata   `gorm:"type:jsonb" json:"metadata,omitempty"`
-	Identifier  *string           `json:"resource_id"`
+	Identifier  *string           `gorm:"<-:create" json:"resource_id"`
 	TenantID    *uuid.UUID        `gorm:"type:uuid" json:"-"`
+	Category    string            `gorm:"default:'uncategorized'" json:"category"`
 
 	Creator      User         `gorm:"foreignKey:created_by" json:"-"`
 	Organization Organization `gorm:"foreignKey:organizer_id" json:"organization"`
-	Tickets      []Ticket     `json:"tickets,omitempty"`
+	Tickets      []*Ticket    `json:"tickets,omitempty"`
 	Subscribers  []*User      `gorm:"many2many:event_subscriptions;joinForeignKey:SubscriberID;joinReferences:SubscriberID" json:"subscribers,omitempty"`
 	// EventSubscriptions []EventSubscription `gorm:"foreignKey:event_id" json:"event_susbcriptions,omitempty"`
 
@@ -43,9 +44,10 @@ type EventSubscription struct {
 	SubscriberID uint                          `gorm:"primarykey" json:"subscriber_id,omitempty"`
 	Status       types.EventSubscriptionStatus `gorm:"default:'notify'" json:"status,omitempty"`
 	TenantID     *uuid.UUID                    `gorm:"type:uuid" json:"-"`
+	Identifier   *string                       `gorm:"<-:create" json:"resource_id"`
 
-	// User  User  `gorm:"foreignKey:subscriber_id;references:id" json:"-"`
-	// Event Event `gorm:"foreignKey:event_id" json:"event,omitempty"`
+	Event      *Event `gorm:"foreignKey:event_id" json:"event,omitempty"`
+	Subscriber *User  `gorm:"foreignKey:subscriber_id" json:"-"`
 
 	types.Timestamps
 }

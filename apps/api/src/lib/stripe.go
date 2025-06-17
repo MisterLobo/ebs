@@ -1,10 +1,10 @@
 package lib
 
 import (
-	"context"
 	"os"
 
 	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/paymentlink"
 )
 
 var stripeClient *stripe.Client
@@ -24,16 +24,20 @@ func NewStripeClient(c *stripe.Client) {
 	stripeClient = c
 }
 
-func CreatePaymentLink(priceId string) (string, error) {
-	sc := GetStripeClient()
-	params := stripe.PaymentLinkCreateParams{
-		LineItems: []*stripe.PaymentLinkCreateLineItemParams{
+func StripeInitialize() {
+	apiKey := os.Getenv("STRIPE_SECRET_KEY")
+	stripe.Key = apiKey
+}
+
+func StripeCreatePaymentLink(priceId string) (string, error) {
+	params := stripe.PaymentLinkParams{
+		LineItems: []*stripe.PaymentLinkLineItemParams{
 			{
 				Price:    stripe.String(priceId),
 				Quantity: stripe.Int64(1),
 			},
 		},
 	}
-	paymentLink, err := sc.V1PaymentLinks.Create(context.Background(), &params)
+	paymentLink, err := paymentlink.New(&params)
 	return paymentLink.URL, err
 }

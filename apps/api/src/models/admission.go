@@ -14,6 +14,7 @@ type Admission struct {
 	Type          string     `json:"type,omitempty"`
 	Status        string     `json:"status,omitempty"`
 	TenantID      *uuid.UUID `gorm:"type:uuid" json:"-"`
+	Identifier    *string    `gorm:"<-:create" json:"resource_id"`
 
 	Reservation *Reservation `json:"reservation,omitempty"`
 	AdmittedBy  *User        `gorm:"foreignKey:by" json:"-"`

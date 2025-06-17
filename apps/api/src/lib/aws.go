@@ -21,13 +21,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type AWSSDKClient struct {
-	innerConfig    *aws.Config
-	innerS3        *s3.Client
-	innerSQS       *sqs.Client
-	innerSNS       *sns.Client
-	innerScheduler *awsched.Client
-}
+type AWSClient struct{}
 
 func awsGetSdkClient() (*aws.Config, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())

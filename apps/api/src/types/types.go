@@ -7,15 +7,15 @@ import (
 	"errors"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type Timestamps struct {
-	CreatedAt time.Time      `gorm:"autoCreateTime:nano" json:"created_at,omitempty"`
-	UpdatedAt time.Time      `gorm:"autoUpdateTime:nano" json:"updated_at,omitempty"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty,omitnil"`
+	CreatedAt *time.Time      `gorm:"autoCreateTime:nano" json:"created_at"`
+	UpdatedAt *time.Time      `gorm:"autoUpdateTime:nano" json:"updated_at"`
+	DeletedAt *gorm.DeletedAt `gorm:"index" json:"deleted_at"`
 }
 type JSON map[string]any
 type JSONB map[string]any
@@ -24,7 +24,7 @@ type JSONBAny struct {
 	Inner any
 }
 
-type KafkaTaskHandler func(ctx *context.Context, p *JSONB)
+type KafkaTaskHandler func(ctx context.Context, p *JSONB)
 
 func (a JSONB) Value() (driver.Value, error) {
 	valueString, err := json.Marshal(a)
@@ -120,6 +120,7 @@ type CreateOrganizationRequestBody struct {
 	OwnerID      uint             `json:"owner" binding:"required"`
 	ContactEmail string           `json:"email" binding:"required"`
 	Type         OrganizationType `json:"type,omitempty"`
+	Category     string           `json:"category,omitempty"`
 }
 
 type ReservationTicket struct {
@@ -148,7 +149,8 @@ type OrganizationBookingsQueryParams struct {
 }
 
 type CreateBookingRequestBody struct {
-	Items []ReservationTicket `json:"items" binding:"required,min=1" `
+	PromoCode string              `json:"promo_code"`
+	Items     []ReservationTicket `json:"items" binding:"required,min=1" `
 }
 
 type RegisterUserRequestBody struct {
@@ -367,17 +369,9 @@ type OrganizationsQueryFilters struct {
 	Owned bool             `form:"owned,omitempty" binding:"omitempty"`
 }
 
-type Claims struct {
-	Username     string   `json:"username"`
-	Role         string   `json:"role"`
-	Permissions  []string `json:"permissions"`
-	Organization uint
-	jwt.RegisteredClaims
-}
-
 type CreateSettingRequestBody struct {
 	Key   string `json:"key" binding:"required"`
-	Value any    `json:"value" binding:"required"`
+	Value JSONB  `json:"value" binding:"required"`
 	Group string `json:"group" binding:"required"`
 }
 
@@ -390,3 +384,31 @@ const (
 	ROLE_OWNER  UserRole = "owner"
 	ROLE_MEMBER UserRole = "member"
 )
+
+type Claims struct {
+	Username     string   `json:"username"`
+	Role         string   `json:"role"`
+	Permissions  []string `json:"permissions"`
+	Organization uint
+	UID          string `json:"uid"`
+	jwt.RegisteredClaims
+}
+
+func (c Claims) GetExpirationTime() (*jwt.NumericDate, error) {
+	return c.RegisteredClaims.GetExpirationTime()
+}
+func (c Claims) GetIssuedAt() (*jwt.NumericDate, error) {
+	return c.RegisteredClaims.GetIssuedAt()
+}
+func (c Claims) GetNotBefore() (*jwt.NumericDate, error) {
+	return c.RegisteredClaims.GetNotBefore()
+}
+func (c Claims) GetIssuer() (string, error) {
+	return c.RegisteredClaims.GetIssuer()
+}
+func (c Claims) GetSubject() (string, error) {
+	return c.RegisteredClaims.GetSubject()
+}
+func (c Claims) GetAudience() (jwt.ClaimStrings, error) {
+	return c.RegisteredClaims.GetAudience()
+}

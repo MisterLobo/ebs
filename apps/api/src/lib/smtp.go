@@ -73,7 +73,7 @@ func SendMail(inputParams *SendMailInput) error {
 		return err
 	}
 	msg := mail.NewMsg()
-	if err := msg.From(inputParams.From); err != nil {
+	if err := msg.FromFormat(inputParams.FromName, inputParams.From); err != nil {
 		log.Printf("Failed to set From address: %s\n", err.Error())
 	}
 	if err := msg.To(inputParams.To...); err != nil {
@@ -101,12 +101,13 @@ func SendMail(inputParams *SendMailInput) error {
 }
 
 type SendMailInput struct {
-	From    string
-	To      []string
-	Cc      []string
-	Bcc     []string
-	ReplyTo string
-	Subject string
-	Body    string
-	Html    bool
+	From     string
+	FromName string
+	To       []string
+	Cc       []string
+	Bcc      []string
+	ReplyTo  string
+	Subject  string
+	Body     string
+	Html     bool
 }

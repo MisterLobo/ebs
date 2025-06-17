@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
 	"ebs/src/types"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
@@ -24,12 +29,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
+	"github.com/go-redis/redismock/v9"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/tidwall/gjson"
+	"golang.org/x/crypto/ssh"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -37,11 +44,15 @@ import (
 
 type TestSuite struct {
 	suite.Suite
-	DB     *gorm.DB
-	Mock   *sqlmock.Sqlmock
-	Token  *string
-	UserId *uint
-	UID    *string
+	DB           *gorm.DB
+	Mock         *sqlmock.Sqlmock
+	RedisMock    *redismock.ClientMock
+	Token        *string
+	UserId       *uint
+	UID          *string
+	FirebaseApp  *firebase.App
+	StripeClient *stripe.Client
+	RedisClient  *redis.Client
 }
 
 type TestUserModel struct {
@@ -59,7 +70,7 @@ func authMiddleware(ctx *gin.Context) {
 		ctx.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
-	claims := &types.Claims{}
+	claims := &Claims{}
 	tkn, err := jwt.ParseWithClaims(reqToken, claims, func(t *jwt.Token) (any, error) {
 		return jwtKey, nil
 	})
@@ -105,6 +116,36 @@ func authMiddleware(ctx *gin.Context) {
 	ctx.Set("perms", claims)
 }
 
+func tokenMiddleware(ctx *gin.Context) {
+	idToken := ctx.GetHeader("Authorization")
+	if idToken == "" {
+		err := errors.New("missing authorization header")
+		log.Printf("Check failed: %s\n", err.Error())
+		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	fauth, err := lib.GetFirebaseAuth()
+	if err != nil {
+		log.Printf("Error retrieving Firebase Auth instance: %s\n", err.Error())
+		ctx.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	token, err := fauth.VerifyIDToken(ctx, idToken)
+	if err != nil {
+		msg := "Failed to verify ID token"
+		err := fmt.Errorf("Failed to verify ID token: %s\n", err.Error())
+		log.Printf("Failed to verify ID token: %v\n", err)
+		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": msg})
+		return
+	}
+	rd := lib.GetRedisClient()
+
+	rd.Set(context.Background(), fmt.Sprintf("%s:token", "token.UID"), idToken, 24*time.Hour)
+	rd.JSONSet(context.Background(), token.UID, "$", token)
+	// rd.ExpireAt(context.Background(), token.UID, time.Unix(token.Expires, 0))
+	ctx.Set("uid", token.UID)
+}
+
 func deleteAllTables() {
 	db := db.GetDb()
 	db.Exec(`
@@ -121,110 +162,6 @@ func deleteAllTables() {
 	TRUNCATE admissions CASCADE;
 	TRUNCATE job_tasks CASCADE;
 	`)
-}
-
-type MockFirebaseApp struct {
-	*firebase.App
-}
-
-type MockFirebaseAuth struct {
-	*auth.Client
-}
-
-type MockUser models.User
-
-func (c *MockFirebaseAuth) CreateUser(ctx context.Context, user *auth.UserToCreate) (*auth.UserRecord, error) {
-	newUser := &auth.UserRecord{
-		EmailVerified: true,
-		UserInfo: &auth.UserInfo{
-			DisplayName: "test user",
-			Email:       "user@test.local",
-			PhoneNumber: "",
-			PhotoURL:    "",
-			ProviderID:  "",
-			UID:         uuid.NewString(),
-		},
-	}
-	return newUser, nil
-}
-
-func (c MockFirebaseAuth) GetUserByEmail(ctx context.Context, email string) (*auth.UserRecord, error) {
-	newUser := &auth.UserRecord{
-		EmailVerified: true,
-		UserInfo: &auth.UserInfo{
-			DisplayName: "test user",
-			Email:       email,
-			PhoneNumber: "",
-			PhotoURL:    "",
-			ProviderID:  "",
-			UID:         uuid.NewString(),
-		},
-	}
-	return newUser, nil
-}
-
-func (s *TestSuite) SetupSuite() {
-	os.Setenv("API_SECRET", "secret")
-	os.Setenv("JWT_SECRET", "secret")
-	os.Setenv("FIREBASE_AUTH_EMULATOR_HOST", "127.0.0.1:9099")
-
-	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
-		v.RegisterValidation("bookabledate", eventDateTimeValidatorFunc)
-		v.RegisterValidation("gtdate", gtfield)
-		v.RegisterValidation("ltdate", ltfield)
-		v.RegisterValidation("betweenfields", betweenfields)
-	}
-
-	d, mock := NewMockDB()
-	db.NewDB(d)
-	s.DB = d
-
-	err := d.AutoMigrate(
-		&models.User{},
-		&models.Organization{},
-		&models.Team{},
-		&models.TeamMember{},
-		&models.Event{},
-		&models.Ticket{},
-		&models.Booking{},
-		&models.Reservation{},
-		&models.Admission{},
-		&models.Transaction{},
-		&models.EventSubscription{},
-		&models.JobTask{},
-	)
-	if err != nil {
-		log.Fatalf("error migration: %s", err.Error())
-	}
-	if err = d.Exec(`
-	CREATE OR REPLACE FUNCTION set_tenant(tenant_id text) RETURNS void AS $$
-	BEGIN
-		PERFORM set_config('app.current_tenant', tenant_id, false);
-	END;
-	$$ LANGUAGE plpgsql;
-	`).Error; err != nil {
-		log.Printf("Error creating FUNCTION set_tenant: %s\n", err.Error())
-	}
-
-	// Setup Mock Stripe API
-	sc := stripe.NewClient("sk_test_123", stripe.WithBackends(
-		&stripe.Backends{
-			API: stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{
-				URL: stripe.String("http://localhost:12111/v1"),
-			}),
-			Connect: stripe.GetBackendWithConfig(stripe.ConnectBackend, &stripe.BackendConfig{
-				URL: stripe.String("http://localhost:12111/v1"),
-			}),
-		},
-	))
-	lib.NewStripeClient(sc)
-
-	app, _ := firebase.NewApp(context.Background(), &firebase.Config{
-		ProjectID: "projectId",
-	})
-	lib.NewFirebaseApp(app)
-
-	s.Mock = &mock
 }
 
 func createFirebaseUser(s *TestSuite, email string) (*string, error) {
@@ -335,19 +272,111 @@ func deleteTestUser(s *TestSuite, email string, fuser bool) error {
 	return nil
 }
 
+func (s *TestSuite) SetupSuite() {
+	os.Setenv("API_SECRET", "secret")
+	os.Setenv("JWT_SECRET", "secret")
+	os.Setenv("FIREBASE_AUTH_EMULATOR_HOST", "127.0.0.1:9099")
+
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		v.RegisterValidation("bookabledate", eventDateTimeValidatorFunc)
+		v.RegisterValidation("gtdate", gtfield)
+		v.RegisterValidation("ltdate", ltfield)
+		v.RegisterValidation("betweenfields", betweenfields)
+	}
+
+	d, mock := NewMockDB()
+	db.NewDB(d)
+	s.DB = d
+
+	err := d.AutoMigrate(
+		&models.User{},
+		&models.Organization{},
+		&models.Event{},
+		&models.Ticket{},
+		&models.Booking{},
+		&models.Reservation{},
+		&models.Admission{},
+		&models.Transaction{},
+		&models.EventSubscription{},
+		&models.JobTask{},
+		&models.Setting{},
+		&models.Team{},
+		&models.TeamMember{},
+		&models.Role{},
+		&models.Permission{},
+		&models.RolePermission{},
+		&models.Rating{},
+		&models.Notification{},
+	)
+	if err != nil {
+		log.Fatalf("error migration: %s", err.Error())
+	}
+	if err = d.Exec(`
+	CREATE OR REPLACE FUNCTION set_tenant(tenant_id text) RETURNS void AS $$
+	BEGIN
+		PERFORM set_config('app.current_tenant', tenant_id, false);
+	END;
+	$$ LANGUAGE plpgsql;
+	`).Error; err != nil {
+		log.Printf("Error creating FUNCTION set_tenant: %s\n", err.Error())
+	}
+
+	// Mock Redis API
+	rc, rmock := redismock.NewClientMock()
+	s.Mock = &mock
+	s.RedisMock = &rmock
+	s.RedisClient = rc
+	lib.NewRedisClient(rc)
+
+	// Setup Mock Stripe API
+	sc := stripe.NewClient("sk_test_123", stripe.WithBackends(
+		&stripe.Backends{
+			API: stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{
+				URL: stripe.String("http://localhost:12111/v1"),
+			}),
+			Connect: stripe.GetBackendWithConfig(stripe.ConnectBackend, &stripe.BackendConfig{
+				URL: stripe.String("http://localhost:12111/v1"),
+			}),
+		},
+	))
+	s.StripeClient = sc
+	lib.NewStripeClient(sc)
+
+	// Mock Firebase app with emulator suite
+	app, _ := firebase.NewApp(context.Background(), &firebase.Config{
+		ProjectID: "projectId",
+	})
+	s.FirebaseApp = app
+	lib.NewFirebaseApp(app)
+}
+
 func (s *TestSuite) TearDownSuite() {
+	timeout, _ := time.ParseDuration("5m")
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	rd := lib.GetRedisClient()
+	rd.FlushAll(ctx)
 	deleteAllTables()
 	os.Unsetenv("API_SECRET")
 	os.Unsetenv("JWT_SECRET")
 	os.Unsetenv("FIREBASE_AUTH_EMULATOR_HOST")
+	db := db.GetDb()
+	db2, _ := db.DB()
+	db2.Close()
+	rd.Close()
 }
 
 func (s *TestSuite) SetupTest() {
 	f, _ := createFirebaseUser(s, email)
 	createUser(s, email, *f)
+	token, _ := newJwt(*f)
+	s.Token = &token
 }
 
 func (s *TestSuite) TearDownTest() {
+	s.Token = nil
+	s.UID = nil
+	s.UserId = nil
 	deleteTestUser(s, email, true)
 }
 
@@ -370,11 +399,6 @@ func NewMockDB() (*gorm.DB, sqlmock.Sqlmock) {
 
 	return gormDB, mock
 }
-
-const (
-	secret = "secret"
-	origin = "http://localhost:3000"
-)
 
 func (s *TestSuite) TestPingRoute() {
 	router := setupRouter()
@@ -404,20 +428,118 @@ const (
 	email = "someone@company.test"
 )
 
+func newKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	pubKeyPath := "./id_rsa_test.pub"
+	keyPath := "./id_rsa_test"
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		log.Fatalf("error generating private key: %s\n", err.Error())
+	}
+	privDER := x509.MarshalPKCS1PrivateKey(privateKey)
+	privBlock := pem.Block{
+		Type:    "RSA PRIVATE KEY",
+		Headers: nil,
+		Bytes:   privDER,
+	}
+	privPEM := pem.EncodeToMemory(&privBlock)
+	if err := privateKey.Validate(); err != nil {
+		log.Fatalf("error encoding key: %s\n", err.Error())
+	}
+	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		log.Fatalf("error generating public key: %s\n", err)
+	}
+	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
+	err = os.WriteFile(keyPath, privPEM, 0600)
+	if err != nil {
+		log.Fatalf("error writing key to file: %s\n", err)
+	}
+	err = os.WriteFile(pubKeyPath, pubKeyBytes, 0600)
+	if err != nil {
+		log.Fatalf("error writing key to file: %s\n", err)
+	}
+	return privateKey, &privateKey.PublicKey, nil
+}
+
+type TestClaims struct {
+	UID string `json:"uid"`
+	jwt.RegisteredClaims
+}
+
+func (c TestClaims) GetExpirationTime() (*jwt.NumericDate, error) {
+	nd := jwt.NewNumericDate(time.Now().Add(30 * time.Minute))
+	return nd, nil
+}
+func (c TestClaims) GetIssuedAt() (*jwt.NumericDate, error) {
+	nd := jwt.NewNumericDate(time.Now())
+	return nd, nil
+}
+func (c TestClaims) GetNotBefore() (*jwt.NumericDate, error) {
+	return c.RegisteredClaims.GetNotBefore()
+}
+func (c TestClaims) GetIssuer() (string, error) {
+	return "issuer", nil
+}
+func (c TestClaims) GetSubject() (string, error) {
+	return "subject", nil
+}
+func (c TestClaims) GetAudience() (jwt.ClaimStrings, error) {
+	cs := jwt.ClaimStrings{}
+	err := cs.UnmarshalJSON([]byte("projectId"))
+	return cs, err
+}
+
+func getClaims() jwt.Claims {
+	jwt.MarshalSingleStringAsArray = false
+	cs := jwt.ClaimStrings{"projectId"}
+	now := time.Now()
+	claims := TestClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  cs,
+			Issuer:    "https://securetoken.google.com/projectId",
+			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+	}
+	return claims
+}
+
+func newJwt(uid string) (string, error) {
+	claims := getClaims().(TestClaims)
+	claims.UID = uid
+	claims.Subject = uid
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, &claims)
+
+	key, _, err := newKeyPair()
+	if err != nil {
+		log.Fatalf("error generating key pair: %s\n", err.Error())
+	}
+	return token.SignedString(key)
+}
+
 func (s *TestSuite) TestUserNotFound() {
 	deleteTestUser(s, email, true)
 
 	router := setupRouter()
-	guestAuthRoutes(router)
+	g := guestAuthRoutes(router)
+	g.Use(tokenMiddleware)
 	jbody := map[string]any{
 		"email": email,
 	}
 	w := httptest.NewRecorder()
 
+	fb, _ := lib.GetFirebaseAuth()
+	newuser := new(auth.UserToCreate)
+	user, _ := fb.CreateUser(context.Background(), newuser)
+	s.UID = &user.UID
+
+	jwt, err := newJwt(user.UID)
+	assert.Nil(s.T(), err)
 	sbody, _ := json.Marshal(&jbody)
 	loginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(sbody)))
-	loginReq.Header.Set("x-secret", secret)
-	loginReq.Header.Set("origin", origin)
+	loginReq.Header.Set("Authorization", jwt)
 	router.ServeHTTP(w, loginReq)
 	assert.Equal(s.T(), 404, w.Code)
 }
@@ -430,10 +552,11 @@ func (s *TestSuite) TestLogin() {
 	jbody := map[string]any{
 		"email": email,
 	}
+	jwt, err := newJwt(*s.UID)
+	assert.Nil(s.T(), err)
 	sbody, _ := json.Marshal(&jbody)
 	loginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(sbody)))
-	loginReq.Header.Set("x-secret", secret)
-	loginReq.Header.Set("origin", origin)
+	loginReq.Header.Set("Authorization", jwt)
 	router.ServeHTTP(w, loginReq)
 
 	assert.Equal(s.T(), 200, w.Code)
@@ -463,12 +586,22 @@ func (s *TestSuite) TestRegisterUser() {
 	}
 	sbody, _ := json.Marshal(&jbody)
 
+	token, err := newJwt(*s.UID)
+	assert.Nil(s.T(), err)
 	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
-	registerReq.Header.Set("x-secret", secret)
-	registerReq.Header.Set("origin", origin)
+	registerReq.Header.Set("Authorization", token)
 	router.ServeHTTP(w, registerReq)
 
 	assert.Equal(s.T(), 200, w.Code)
+
+	bres, _ := io.ReadAll(w.Body)
+	var response struct {
+		UID string `json:"uid"`
+	}
+	err = json.Unmarshal(bres, &response)
+	assert.Nil(s.T(), err)
+	assert.NotEmpty(s.T(), response.UID)
+	assert.NotNil(s.T(), response.UID)
 }
 
 func (s *TestSuite) TestRegisterAnotherUser() {
@@ -487,15 +620,42 @@ func (s *TestSuite) TestRegisterAnotherUser() {
 	}
 	sbody, _ := json.Marshal(&jbody)
 
+	token, err := newJwt(*s.UID)
+	assert.Nil(s.T(), err)
 	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
-	registerReq.Header.Set("x-secret", secret)
-	registerReq.Header.Set("origin", origin)
+	registerReq.Header.Set("Authorization", token)
 	router.ServeHTTP(w, registerReq)
 	bres, _ := io.ReadAll(w.Body)
 	sres := string(bres)
 	errString := gjson.Get(sres, "error").String()
-	assert.Equal(s.T(), errString, "")
+	uid := gjson.Get(sres, "uid").String()
+	assert.Equal(s.T(), "", errString)
 	assert.Equal(s.T(), 200, w.Code)
+	assert.NotEmpty(s.T(), uid)
+	assert.NotNil(s.T(), uid)
+}
+
+func (s *TestSuite) TestRegisterWithoutFirebaseAccount() {
+	router := setupRouter()
+	guestAuthRoutes(router)
+
+	w := httptest.NewRecorder()
+
+	jbody := map[string]any{
+		"email": "nonexistentuser@company.test",
+	}
+	sbody, _ := json.Marshal(&jbody)
+
+	token, err := newJwt(*s.UID)
+	assert.Nil(s.T(), err)
+	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
+	registerReq.Header.Set("Authorization", token)
+	router.ServeHTTP(w, registerReq)
+	bres, _ := io.ReadAll(w.Body)
+	sres := string(bres)
+	errString := gjson.Get(sres, "error").String()
+	assert.ErrorContains(s.T(), errors.New(errString), "no user exists with the email:")
+	assert.Equal(s.T(), 400, w.Code)
 }
 
 func (s *TestSuite) TestEvents() {
@@ -511,8 +671,6 @@ func (s *TestSuite) TestEvents() {
 		w := httptest.NewRecorder()
 		listReq, _ := http.NewRequest("GET", "/api/v1/events", nil)
 		listReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-		listReq.Header.Set("x-secret", secret)
-		listReq.Header.Set("origin", origin)
 		router.ServeHTTP(w, listReq)
 		resbytes, err := io.ReadAll(w.Body)
 		if err == nil {
@@ -539,8 +697,6 @@ func (s *TestSuite) TestEvents() {
 		eventReq, err := http.NewRequest("POST", "/api/v1/events", strings.NewReader(string(rbytes)))
 		assert.Nil(s.T(), err)
 		eventReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-		eventReq.Header.Set("x-secret", secret)
-		eventReq.Header.Set("origin", origin)
 		router.ServeHTTP(w, eventReq)
 
 		assert.Equal(s.T(), 400, w.Code)
@@ -555,5 +711,6 @@ func (s *TestSuite) TestEvents() {
 }
 
 func TestRunner(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(TestSuite))
 }

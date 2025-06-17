@@ -15,9 +15,10 @@ type Reservation struct {
 	ShareURL   string     `json:"share_url,omitempty"`
 	Status     string     `gorm:"default:'pending'" json:"status,omitempty"`
 	TenantID   *uuid.UUID `gorm:"type:uuid" json:"-"`
+	Identifier *string    `gorm:"<-:create" json:"resource_id"`
 
-	Ticket  Ticket  `json:"ticket,omitempty"`
-	Booking Booking `json:"booking,omitempty"`
+	Ticket  *Ticket  `json:"ticket"`
+	Booking *Booking `json:"booking"`
 
 	types.Timestamps
 }

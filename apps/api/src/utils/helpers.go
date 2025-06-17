@@ -5,12 +5,15 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"ebs/src/config"
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
 	"ebs/src/types"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +28,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/gosimple/slug"
 	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/account"
+	"github.com/stripe/stripe-go/v82/accountlink"
+	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -108,7 +114,7 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 			return err
 		}
 		if org.Type != types.ORG_STANDARD && org.Type != types.ORG_PERSONAL {
-			err := errors.New("Not enough permissions to perform this action")
+			err := errors.New("not enough permissions to perform this action")
 			return err
 		}
 		err = tx.Create(&event).Error
@@ -284,7 +290,7 @@ func CreateNewTicket(ctx *gin.Context, params *types.CreateTicketRequestBody) (u
 			Find(&event).
 			Error
 		if err != nil {
-			err := fmt.Errorf("Event %d does not exist", params.EventID)
+			err := fmt.Errorf("event %d does not exist", params.EventID)
 			return err
 		}
 		resId := fmt.Sprintf("arn:%d:%d:ticket/%s", event.OrganizerID, event.ID, ticket.Tier)
@@ -294,7 +300,7 @@ func CreateNewTicket(ctx *gin.Context, params *types.CreateTicketRequestBody) (u
 			return err
 		}
 		if event.Organization.StripeAccountID == nil {
-			err := errors.New("Could not create ticket. Reason: organization not properly setup")
+			err := errors.New("could not create ticket. Reason: organization not properly setup")
 			return err
 		}
 		const MINIMUM_UNITS float32 = 100
@@ -319,11 +325,16 @@ func CreateNewTicket(ctx *gin.Context, params *types.CreateTicketRequestBody) (u
 		}
 		sc := lib.GetStripeClient()
 		product, err := sc.V1Products.Create(context.Background(), createParams)
-		err = tx.
+		if err != nil {
+			return err
+		}
+		if err := tx.
 			Model(&models.Ticket{}).
 			Where(&models.Ticket{ID: ticket.ID}).
 			Update("stripe_price_id", product.DefaultPrice.ID).
-			Error
+			Error; err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -375,7 +386,7 @@ func CreateNewOrganization(ctx *gin.Context, params *types.CreateOrganizationReq
 		})
 		if err != nil {
 			log.Printf("Error creating account for organization: %s\n", err.Error())
-			return errors.New("Error creating account for organization")
+			return errors.New("error creating account for organization")
 		}
 		err = tx.
 			Model(&models.Organization{}).
@@ -410,7 +421,7 @@ func GetTicketsForEvent(id uint, isOwner bool) ([]*models.Ticket, error) {
 		return nil, err
 	}
 
-	err = db.Transaction(func(tx *gorm.DB) error {
+	if err := db.Transaction(func(tx *gorm.DB) error {
 		for _, v := range tickets {
 			var stats *models.TicketStats
 			tx.
@@ -422,7 +433,9 @@ func GetTicketsForEvent(id uint, isOwner bool) ([]*models.Ticket, error) {
 			v.Stats = stats
 		}
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
 	return tickets, nil
 }
 
@@ -431,7 +444,10 @@ func PublishEvent(id uint) error {
 	err := db.Transaction(func(tx *gorm.DB) error {
 		err := tx.
 			Model(&models.Event{}).
-			Where(&models.Event{ID: id, Status: types.EVENT_DRAFT}).
+			Where("id = ? AND status IN (?)", id, []types.EventStatus{
+				types.EVENT_DRAFT,
+				types.EVENT_TICKETS_NOTIFY,
+			}).
 			Update("status", types.EVENT_REGISTRATION).Error
 		if err != nil {
 			return err
@@ -444,9 +460,8 @@ func PublishEvent(id uint) error {
 func GetTicket(id uint) (*models.Ticket, error) {
 	var ticket models.Ticket
 	db := db.GetDb()
-	db.Model(&models.Ticket{}).Where(&models.Ticket{ID: id}).Preload("Event").First(&ticket)
-	if ticket.ID < 1 {
-		err := errors.New("Ticket not found")
+	if err := db.Model(&models.Ticket{}).Where(&models.Ticket{ID: id}).Preload("Event").First(&ticket).Error; err != nil {
+		err := errors.New("ticket not found")
 		return nil, err
 	}
 	log.Printf("event: %v", ticket.Event.ID)
@@ -459,7 +474,7 @@ func GetTicketSeats(id uint) (free uint, reserved uint, err error) {
 	tx := db.Session(&gorm.Session{PrepareStmt: true})
 	tx.Where(&models.Ticket{ID: id}).First(&ticket)
 	if ticket.ID < 1 {
-		err := errors.New("Ticket not found")
+		err := errors.New("ticket not found")
 		return 0, 0, err
 	}
 	var stats models.TicketStats
@@ -476,20 +491,67 @@ func GetTicketSeats(id uint) (free uint, reserved uint, err error) {
 
 func PublishTicket(id uint) error {
 	db := db.GetDb()
-	err := db.Model(&models.Ticket{}).Where(&models.Ticket{ID: id, Status: "draft"}).Update("status", "open").Error
-	return err
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := db.
+			Model(&models.Ticket{}).
+			Where(&models.Ticket{ID: id, Status: types.TICKET_DRAFT}).
+			Update("status", types.TICKET_OPEN).
+			Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func CloseTicket(id uint) error {
+	var ticket models.Ticket
 	db := db.GetDb()
-	err := db.Model(&models.Ticket{}).Where(&models.Ticket{ID: id, Status: "open"}).Update("status", "closed").Error
-	return err
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if tx.Model(&models.Ticket{}).Association("Bookings").Count() > 0 {
+			return errors.New("archiving a ticket with reservations is not allowed")
+		}
+		if err := tx.Where(&models.Ticket{ID: id}).First(&ticket).Error; err != nil {
+			return err
+		}
+		if err := tx.
+			Model(&models.Ticket{}).
+			Where(&models.Ticket{ID: id, Status: types.TICKET_OPEN}).
+			Update("status", types.TICKET_CLOSED).
+			Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func DeleteTicket(id uint) error {
+	ticket := &models.Ticket{ID: id}
 	db := db.GetDb()
-	err := db.Where(&models.Ticket{ID: id}).Update("status", "archived").Error
-	return err
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if tx.Model(ticket).Association("Bookings").Count() > 0 {
+			return errors.New("deleting a ticket with reservations is not allowed")
+		}
+		if err := tx.
+			Model(ticket).
+			Update("status", types.TICKET_ARCHIVED).
+			Error; err != nil {
+			return err
+		}
+
+		if err := tx.Delete(ticket).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func CreateReservation(ctx *gin.Context, params *types.CreateBookingRequestBody, userId uint, csURL string, txId *string, csID *string, requestId *uuid.UUID) ([]uint, []string, error) {
@@ -535,7 +597,7 @@ func CreateReservation(ctx *gin.Context, params *types.CreateBookingRequestBody,
 			}
 
 			if slotsToTake == 0 {
-				err := fmt.Errorf("Ticket [%s] has no more slots available", ticket.Tier)
+				err := fmt.Errorf("ticket [%s] has no more slots available", ticket.Tier)
 				log.Println(err)
 				errors = append(errors, err.Error())
 				continue
@@ -561,7 +623,7 @@ func CreateReservation(ctx *gin.Context, params *types.CreateBookingRequestBody,
 			}
 			err = tx.Create(&r).Error
 			if err != nil {
-				err = fmt.Errorf("error in Booking transaction: %s\n", err.Error())
+				err = fmt.Errorf("error in Booking transaction: %s", err.Error())
 				log.Println(err.Error())
 				return err
 			}
@@ -593,12 +655,13 @@ func CreateReservation(ctx *gin.Context, params *types.CreateBookingRequestBody,
 					PayloadID: payloadId,
 					Payload: map[string]any{
 						"payloadId":        payloadId,
-						"id":               int64(bookingId),
+						"id":               bookingId,
 						"producerClientId": "PendingTransactionsProducer",
 						"topic":            "PendingTransactions",
-						"table":            "reservations",
+						"table":            "bookings",
+						"bookings":         []uint{},
 					},
-					Source:     "Reservations",
+					Source:     "Booking",
 					SourceType: "table",
 					Topic:      "PendingTransactions",
 				}
@@ -624,7 +687,7 @@ func CreateReservation(ctx *gin.Context, params *types.CreateBookingRequestBody,
 			}
 		}
 		if len(errors) > 0 {
-			err := fmt.Errorf("There were [%d] errors while adding Booking records", len(errors))
+			err := fmt.Errorf("there were [%d] errors while adding Booking records", len(errors))
 			return err
 		}
 
@@ -655,12 +718,14 @@ func GetOwnReservations(id uint) ([]models.Booking, error) {
 		Preload("Tickets").
 		Preload("Transaction").
 		Order("created_at DESC").
+		Limit(20).
 		Find(&bookings).
 		Error
 	return bookings, err
 }
 
-func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[string]string) (*string, *string, *string, error) {
+func CreateStripeCheckout(ctx *gin.Context, params *types.CreateBookingRequestBody, metadata map[string]string) (*string, *string, *string, error) {
+	userId := ctx.GetUint("id")
 	sc := lib.GetStripeClient()
 	successUrl := fmt.Sprintf("%s/checkout/callback/success", os.Getenv("APP_HOST"))
 	piParams := &stripe.CheckoutSessionCreatePaymentIntentDataParams{}
@@ -671,24 +736,35 @@ func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[s
 	}
 	log.Printf("[meta]: %v\n", meta)
 	createParams := stripe.CheckoutSessionCreateParams{
-		SuccessURL:        stripe.String(successUrl),
-		UIMode:            stripe.String("hosted"),
-		Mode:              stripe.String("payment"),
-		PaymentIntentData: piParams,
+		SuccessURL:          stripe.String(successUrl),
+		UIMode:              stripe.String("hosted"),
+		Mode:                stripe.String("payment"),
+		PaymentIntentData:   piParams,
+		AllowPromotionCodes: stripe.Bool(true),
 		AfterExpiration: &stripe.CheckoutSessionCreateAfterExpirationParams{
 			Recovery: &stripe.CheckoutSessionCreateAfterExpirationRecoveryParams{
 				Enabled: stripe.Bool(true),
 			},
 		},
 		InvoiceCreation: &stripe.CheckoutSessionCreateInvoiceCreationParams{
+			InvoiceData: &stripe.CheckoutSessionCreateInvoiceCreationInvoiceDataParams{
+				Metadata: metadata,
+			},
 			Enabled: stripe.Bool(true),
 		},
 		Metadata: metadata,
 	}
 
+	var user models.User
 	db := db.GetDb()
 	lineItems := []*stripe.CheckoutSessionCreateLineItemParams{}
 	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.
+			Where(&models.User{ID: userId}).
+			First(&user).
+			Error; err != nil {
+			return err
+		}
 		for _, v := range params.Items {
 			var ticket models.Ticket
 			err := tx.
@@ -739,7 +815,8 @@ func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[s
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		txn := &models.Transaction{
-			Amount:            float64(checkoutSession.AmountTotal),
+			Amount:            float64(checkoutSession.AmountSubtotal),
+			AmountPaid:        float64(checkoutSession.AmountTotal),
 			Currency:          string(checkoutSession.Currency),
 			CheckoutSessionId: &checkoutSession.ID,
 			Status:            types.TRANSACTION_PENDING,
@@ -747,7 +824,7 @@ func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[s
 			SourceName:        "table",
 			SourceValue:       "Booking",
 			Metadata:          md,
-			// Metadata:          &meta,
+			TenantID:          user.TenantID,
 		}
 		err := tx.Create(txn).Error
 		if err != nil {
@@ -771,32 +848,36 @@ func CreateStripeCheckout(params *types.CreateBookingRequestBody, metadata map[s
 
 func UpdateEventStatus(id uint, newStatus types.EventStatus, oldStatus types.EventStatus) error {
 	db := db.GetDb()
-	log.Println("OpenEventStatus: Begin Transaction")
+	log.Println("UpdateEventStatus: Begin Transaction")
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var event models.Event
 		conds := &models.Event{ID: id, Status: oldStatus}
-		err := tx.Where(conds).First(&event).Error
-		if err != nil {
+		if err := tx.
+			Clauses(clause.Locking{
+				Strength: "UPDATE",
+				Table:    clause.Table{Name: clause.CurrentTable},
+			}).
+			Where(conds).
+			First(&event).
+			Error; err != nil {
 			log.Printf("Failed to update event status: %s\n", err.Error())
 			return err
 		}
-		err = tx.
+		if err := tx.
 			Model(&models.Event{}).
 			Where(conds).
 			Updates(&models.Event{
 				Status: newStatus,
 				Mode:   "default",
-			}).Error
-		if err != nil {
+			}).Error; err != nil {
 			log.Printf("Event status update did not complete successfully: %s\n", err.Error())
 			return err
 		}
-		err = tx.
+		if err := tx.
 			Model(&models.EventSubscription{}).
 			Where(&models.EventSubscription{EventID: id, Status: "pending"}).
 			Update("status", "done").
-			Error
-		if err != nil {
+			Error; err != nil {
 			log.Printf("EventSubscription update failed: %s\n", err.Error())
 			return err
 		}
@@ -806,7 +887,7 @@ func UpdateEventStatus(id uint, newStatus types.EventStatus, oldStatus types.Eve
 		log.Printf("Error on transaction: %s\n", err.Error())
 		return err
 	}
-	log.Println("OpenEventStatus: End Transaction")
+	log.Println("UpdateEventStatus: End Transaction")
 	return nil
 }
 
@@ -894,4 +975,82 @@ func DecryptMessage(key []byte, message string) (*string, error) {
 	decodedString := string(decryptedData)
 
 	return &decodedString, nil
+}
+
+func newKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	pubKeyPath := "./id_rsa_test.pub"
+	keyPath := "./id_rsa_test"
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		log.Fatalf("error generating private key: %s\n", err.Error())
+	}
+	privDER := x509.MarshalPKCS1PrivateKey(privateKey)
+	privBlock := pem.Block{
+		Type:    "RSA PRIVATE KEY",
+		Headers: nil,
+		Bytes:   privDER,
+	}
+	privPEM := pem.EncodeToMemory(&privBlock)
+	if err := privateKey.Validate(); err != nil {
+		log.Fatalf("error encoding key: %s\n", err.Error())
+	}
+	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		log.Fatalf("error generating public key: %s\n", err)
+	}
+	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
+	err = os.WriteFile(keyPath, privPEM, 0600)
+	if err != nil {
+		log.Fatalf("error writing key to file: %s\n", err)
+	}
+	err = os.WriteFile(pubKeyPath, pubKeyBytes, 0600)
+	if err != nil {
+		log.Fatalf("error writing key to file: %s\n", err)
+	}
+	return privateKey, &privateKey.PublicKey, nil
+}
+
+/* func newJwt(uid string) (string, error) {
+	claims := types.Claims{}
+	claims.UID = uid
+	claims.Subject = uid
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, &claims)
+
+	key, _, err := newKeyPair()
+	if err != nil {
+		log.Fatalf("error generating key pair: %s\n", err.Error())
+	}
+	return token.SignedString(key)
+} */
+
+func CreateStripeAccount(org *models.Organization) (*stripe.Account, string, error) {
+	acc, err := account.New(&stripe.AccountParams{
+		BusinessProfile: &stripe.AccountBusinessProfileParams{
+			Name: stripe.String(org.Name),
+		},
+		Email: stripe.String(org.ContactEmail),
+		Capabilities: &stripe.AccountCapabilitiesParams{
+			CardPayments: &stripe.AccountCapabilitiesCardPaymentsParams{
+				Requested: stripe.Bool(true),
+			},
+			Transfers: &stripe.AccountCapabilitiesTransfersParams{
+				Requested: stripe.Bool(true),
+			},
+		},
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	link, err := accountlink.New(&stripe.AccountLinkParams{
+		Account:    stripe.String(acc.ID),
+		Type:       stripe.String("account_onboarding"),
+		ReturnURL:  stripe.String(fmt.Sprint(os.Getenv("APP_HOST"), "/dashboard")),
+		RefreshURL: stripe.String(fmt.Sprint(os.Getenv("APP_HOST"), "/callback/account/refresh")),
+	})
+	if err != nil {
+		return acc, "", err
+	}
+	return acc, link.URL, nil
 }

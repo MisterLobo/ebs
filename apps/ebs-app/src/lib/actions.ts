@@ -13,8 +13,6 @@ export async function getActiveOrganization(): Promise<Organization | undefined>
   const response = await fetch(`${process.env.API_HOST}/organizations/active`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 401) {
@@ -38,8 +36,6 @@ export async function createOrganization(data: NewOrganizationRequestPayload) {
   const response = await fetch(`${process.env.API_HOST}/organizations`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify(data),
@@ -55,8 +51,6 @@ export async function organizationOnboarding(id: number): Promise<{ completed?: 
   const response = await fetch(`${process.env.API_HOST}/organizations/${id}/onboarding`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { completed, account_id, url, error, data } = await response.json()
@@ -70,8 +64,6 @@ export async function organizationOnboardingBegin(id: number) {
   const response = await fetch(`${process.env.API_HOST}/organizations/${id}/onboarding`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -83,11 +75,9 @@ export async function organizationOnboardingBegin(id: number) {
 export async function listOrganizations() {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
-  const response = await fetch(`${process.env.API_HOST}/organizations?type=standard&owned=true`, {
+  const response = await fetch(`${process.env.API_HOST}/organizations?owned=true`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -103,8 +93,6 @@ export async function switchOrganization(id: number) {
   const response = await fetch(`${process.env.API_HOST}/organizations/${id}/switch`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -125,8 +113,6 @@ export async function isSharedOrganization(): Promise<boolean | undefined> {
   const response = await fetch(`${process.env.API_HOST}/organizations/check`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 401 && $cookies.has('token')) {
@@ -152,8 +138,6 @@ export async function createEvent(data: NewEventRequestPayload) {
   const response = await fetch(`${process.env.API_HOST}/events`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify(data),
@@ -169,10 +153,21 @@ export async function publishEvent(id: number) {
   const response = await fetch(`${process.env.API_HOST}/events/${id}/publish`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PATCH',
+  })
+  const { error } = await response.json()
+  return error
+}
+
+export async function cancelEvent(id: number) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/events/${id}/cancel`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'PUT',
   })
   const { error } = await response.json()
   return error
@@ -184,16 +179,16 @@ export async function setEventStatus(id: number, new_status: string) {
   const response = await fetch(`${process.env.API_HOST}/events/${id}/status`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PATCH',
     body: JSON.stringify({
       new_status,
     })
   })
-  const { error } = await response.json()
-  return error
+  if (response.status !== 204) {
+    const { error } = await response.json()
+    return error
+  }
 }
 
 export async function getEvents(orgId?: number, filters?: EventQueryFilters) {
@@ -208,8 +203,6 @@ export async function getEvents(orgId?: number, filters?: EventQueryFilters) {
   const response = await fetch(requestUrl, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -222,14 +215,31 @@ export async function getEvents(orgId?: number, filters?: EventQueryFilters) {
   return data as Event[]
 }
 
+export async function getOrgEventById(orgId: number, id: number): Promise<Event | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/organizations/${orgId}/events/${id}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 401) {
+    $cookies.delete('token')
+    redirect('/login')
+  }
+  const { data, error } = await response.json()
+  if (response.status !== 200 && error) {
+    console.log('[error]:', error)
+  }
+  return data
+}
+
 export async function getEventById(id: number): Promise<Event | null> {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
   const response = await fetch(`${process.env.API_HOST}/events/${id}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 401) {
@@ -250,8 +260,6 @@ export async function createTicket(data: NewTicketRequestPayload) {
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify(data),
@@ -266,10 +274,34 @@ export async function publishTicket(id: number) {
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/publish`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PATCH',
+  })
+  const { error } = await response.json()
+  return error
+}
+
+export async function closeTicket(id: number) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/tickets/${id}/close`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'PATCH',
+  })
+  const { error } = await response.json()
+  return error
+}
+
+export async function archiveTicket(id: number) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/tickets/${id}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'DELETE',
   })
   const { error } = await response.json()
   return error
@@ -285,8 +317,6 @@ export async function getTickets(id: number, orgId?: number) {
   const response = await fetch(requestUrl, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -307,8 +337,6 @@ export async function getTicket(id: number): Promise<Ticket | null> {
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -329,8 +357,6 @@ export async function getBookingById(id: number): Promise<Booking | null> {
   const response = await fetch(`${process.env.API_HOST}/bookings/${id}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -345,11 +371,10 @@ export async function getBookingById(id: number): Promise<Booking | null> {
   return data as Booking
 }
 
-export async function registerUser(email: string) {
+export async function registerUser(email: string, idToken: string) {
   const response = await fetch(`${process.env.API_HOST}/auth/register`, {
     headers: {
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
+      'Authorization': idToken,
     },
     method: 'POST',
     body: JSON.stringify({
@@ -363,11 +388,10 @@ export async function registerUser(email: string) {
   }
 }
 
-export async function loginUser(email: string) {
+export async function loginUser(email: string, idToken: string) {
   const response = await fetch(`${process.env.API_HOST}/auth/login`, {
     headers: {
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
+      'Authorization': idToken,
     },
     method: 'POST',
     body: JSON.stringify({
@@ -385,18 +409,17 @@ export async function loginUser(email: string) {
   }
 }
 
-export async function createCheckoutSession(items: { qty: number, ticket: number }[]): Promise<{ url?: string, error?: string, status?: number }> {
+export async function createCheckoutSession(items: { qty: number, ticket: number }[], promoCode?: string): Promise<{ url?: string, error?: string, status?: number }> {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
   const response = await fetch(`${process.env.API_HOST}/checkout`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify({
       items,
+      promo_code: promoCode,
     })
   })
   if (![200, 400].includes(response.status)) {
@@ -413,14 +436,31 @@ export async function createCheckoutSession(items: { qty: number, ticket: number
   }
 }
 
+export async function checkPromoCode(code: string): Promise<{ error?: string, found?: boolean }> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/stripe/coupon?code=${code}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  const { found, error } = await response.json()
+  if (response.status === 404) {
+    return { error }
+  }
+  if (response.status !== 200) {
+    console.error('API returned a non-200 status:', response.status)
+    return { found: false }
+  }
+  return { found }
+}
+
 export async function resumeCheckoutSession(id: string, checkoutId: string) {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
   const response = await fetch(`${process.env.API_HOST}/transactions/checkout`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
     body: JSON.stringify({
@@ -438,8 +478,6 @@ export async function cancelReservation(bookingId: number) {
   const response = await fetch(`${process.env.API_HOST}/bookings/${bookingId}/cancel`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PUT',
   })
@@ -465,8 +503,6 @@ export async function cancelTransaction({ id, bookings }: { id?: string, booking
   const response = await fetch(`${process.env.API_HOST}/bookings/cancel`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'PUT',
     body: JSON.stringify(body),
@@ -488,8 +524,6 @@ export async function getReservations(org = false) {
   const response = await fetch(requestUrl, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, error } = await response.json()
@@ -503,8 +537,6 @@ export async function getBookingTickets(id: number) {
   const response = await fetch(`${process.env.API_HOST}/bookings/${id}/reservations`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, count, error } = await response.json()
@@ -518,8 +550,6 @@ export async function getTicketStats(id: number) {
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/seats`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { free, reserved, error } = await response.json()
@@ -533,8 +563,6 @@ export async function getTicketBookings(id: number): Promise<{ data?: Booking[],
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/bookings`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, error } = await response.json()
@@ -551,8 +579,6 @@ export async function getTicketReservations(id: number): Promise<{ data?: Reserv
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/reservations`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, error } = await response.json()
@@ -569,8 +595,6 @@ export async function getBookingReservations(id: number): Promise<{ data?: Booki
   const response = await fetch(`${process.env.API_HOST}/bookings/${id}/reservations`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, error } = await response.json()
@@ -587,8 +611,6 @@ export async function subscribeToEvent(eventId: number) {
   const response = await fetch(`${process.env.API_HOST}/events/${eventId}/subscribe`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -603,11 +625,12 @@ export async function getWaitlist() {
   const response = await fetch(`${process.env.API_HOST}/events/waitlist`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   const { data, count, error } = await response.json()
+  if (error) {
+    console.error('error:', error)
+  }
   
   return { data, count, error }
 }
@@ -618,8 +641,6 @@ export async function downloadTicket(id: number, resId: number) {
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/download/${resId}/code`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -640,8 +661,6 @@ export async function getTicketShareLink(id: number, resId: number): Promise<str
   const response = await fetch(`${process.env.API_HOST}/tickets/${id}/download/${resId}/code?share_link=true`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
@@ -663,14 +682,18 @@ export async function logout() {
   const response = await fetch(`${process.env.API_HOST}/auth/logout`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
     method: 'POST',
   })
+  if (response.status !== 200) {
+    console.log('something went wrong')
+    return false
+  }
   console.log('[logout]:', response.status)
   if ($cookies.has('token')) {
     $cookies.delete('token')
   }
+  return true
 }
 
 export async function cfSiteverify(token: string): Promise<boolean> {
@@ -693,8 +716,6 @@ export async function getBookings(org: number): Promise<Booking[]> {
   const response = await fetch(`${process.env.API_HOST}/organizations/${org}/bookings`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -716,8 +737,6 @@ export async function getAdmissions(orgId: number): Promise<Admission[]> {
   const response = await fetch(`${process.env.API_HOST}/organizations/${orgId}/admissions`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -739,8 +758,6 @@ export async function getAdmission(id: number): Promise<Admission | null> {
   const response = await fetch(`${process.env.API_HOST}/admissions/${id}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -762,8 +779,6 @@ export async function getOrganizationTickets(org: number): Promise<Ticket[]> {
   const response = await fetch(`${process.env.API_HOST}/organizations/${org}/tickets`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -785,8 +800,6 @@ export async function getSoldTickets(org: number): Promise<any> {
   const response = await fetch(`${process.env.API_HOST}/organizations/${org}/tickets/sold`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -802,14 +815,75 @@ export async function getSoldTickets(org: number): Promise<any> {
   return data
 }
 
+export async function getMonthlyCustomers(org: number): Promise<number | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/organizations/${org}/customers/count`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return 0
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return 0
+  }
+
+  const { data } = await response.json()
+  return data
+}
+
+export async function getDailyTransactions(org: number): Promise<any> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/organizations/${org}/transactions/daily`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return []
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return []
+  }
+
+  const { data } = await response.json()
+  return data
+}
+
+export async function getOrgDashboard(org: number): Promise<any> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/organizations/${org}/dashboard`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status === 400) {
+    const { error } = await response.json()
+    console.error('Error response from API: ', error)
+    return null
+  } else if (response.status !== 200) {
+    console.error('Something went wrong')
+    return null
+  }
+
+  const { data } = await response.json()
+  return data
+}
+
 export async function getTransaction(id: number): Promise<Transaction | null> {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
   const response = await fetch(`${process.env.API_HOST}/transactions/${id}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -838,8 +912,6 @@ export async function aboutOrganization({ id, slug }: { id?: number, slug?: stri
   const response = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -861,8 +933,6 @@ export async function getEventSubscription(id: number): Promise<number | null> {
   const response = await fetch(`${process.env.API_HOST}/events/${id}/subscription`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status === 400) {
@@ -884,8 +954,6 @@ export async function me(): Promise<{ me?: any, md?: Record<string, string> } | 
   const response = await fetch(`${process.env.API_HOST}/me`, {
     headers: {
       'Authorization': `Bearer ${token}`,
-      'origin': `${process.env.APP_HOST}`,
-      'x-secret': `${process.env.API_SECRET}`,
     },
   })
   if (response.status !== 200) {
@@ -971,4 +1039,39 @@ export async function getPaymentMethods(): Promise<Stripe.PaymentMethod[] | null
   })
 
   return listData as Stripe.PaymentMethod[]
+}
+
+export async function subscribeToFCMTopics(fcmToken: string, ...topics: string[]) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/fcm`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      token: fcmToken,
+      topics,
+    }),
+    method: 'POST',
+  })
+  if (response.status !== 200) {
+    console.error('Something went wrong')
+  }
+}
+
+export async function sendFCMMessage(topic: string) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/fcm/send`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      topic,
+    }),
+    method: 'POST',
+  })
+  if (response.status !== 200) {
+    console.error('Something went wrong')
+  }
 }

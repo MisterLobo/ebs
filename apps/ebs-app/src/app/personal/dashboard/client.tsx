@@ -18,9 +18,10 @@ function ReservationCard({ data }: { data: Booking }) {
   return (
     <Card className="w-3xl h-auto">
       <CardHeader>
+        <h3 className="text-xl">{ data.event?.title }</h3>
         <p>Created { formatDistance(new Date(data?.created_at as string), Date.now(), { addSuffix: true, includeSeconds: true }) }</p>
-        <p className="text-xs">{ formatDistance(new Date(data.event?.date_time as string), Date.now(), { addSuffix: true }) }</p>
-        <CardTitle>{ data?.slots_taken } slots</CardTitle>
+        <p className="text-xs">{ data.event && formatDistance(new Date(data.event?.date_time as string), Date.now(), { addSuffix: true }) }</p>
+        <CardTitle>{ data?.slots_taken } slots taken</CardTitle>
       </CardHeader>
       <CardContent>
         <p>{ data?.currency?.toUpperCase() } { Number(data?.subtotal).toLocaleString('en-US', { minimumFractionDigits: 2 }) }</p>

@@ -26,9 +26,10 @@ export default async function PersonalTickets() {
         <h3 className="text-xl">{ booking?.event?.location }</h3>
         {booking?.event?.date_time && <h3 className="text-xl">{ format(new Date(booking?.event?.date_time as string), 'PPPP p') }</h3>}
         <div className="flex flex-col items-center gap-4 my-10">
-        {booking?.reservations?.map((t, i) => (
-          <ReservedTicket booking={booking} reservation={t} data={t.ticket} key={i} />
-        ))}
+          <p>{ booking.reservations?.length } tickets</p>
+          {booking?.reservations?.map((t, i) => (
+            <ReservedTicket booking={booking} reservation={t} data={t.ticket} key={i} />
+          ))}
         </div>
       </Suspense>
     </div>

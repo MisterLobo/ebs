@@ -56,7 +56,7 @@ export default function CartItems() {
       <Separator className="my-4" />
       <h4 className="text-3xl">Total: ${ total.toLocaleString('en-US', { minimumFractionDigits: 2 }) }</h4>
       <Separator className="my-4" />
-      <Button className="cursor-pointer" onClick={checkout} disabled={total === 0 || items.length === 0 || busy}>{ busy ? 'Processing' : 'Proceed to Checkout' }</Button>
+      <Button className="cursor-pointer w-full" onClick={checkout} disabled={total === 0 || items.length === 0 || busy}>{ busy ? 'Processing' : 'Proceed to Checkout' }</Button>
     </div>
   )
 }

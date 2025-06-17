@@ -6,7 +6,7 @@ import { Separator } from '@/components/ui/separator'
 import { getEventSubscription, subscribeToEvent } from '@/lib/actions'
 import { Event } from '@/lib/types'
 import { format } from 'date-fns'
-import { BellIcon, Clock, Info, MapPinIcon, Ticket } from 'lucide-react'
+import { BellIcon, Calendar, Info, MapPinIcon, Ticket } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
@@ -50,7 +50,7 @@ export default function EventCard({ data }: Props) {
         <div className="flex flex-col gap-2 justify-center w-full ml-2">
           <h2 className="text-md inline-flex text-ellipsis line-clamp-2">{ data?.title }</h2>
           <div className="flex text-sm leading-none">
-            <p className="inline-flex items-center gap-2 min-w-32"><Clock size={16} />{ format(new Date(data?.date_time as string), 'E p') }</p>
+            <p className="inline-flex items-center gap-2 min-w-32"><Calendar size={16} />{ format(new Date(data?.date_time as string), 'E p') }</p>
             <p className="inline-flex items-center gap-2 my-1 w-full"><MapPinIcon size={16} />{ data?.location }</p>
           </div>
         </div>

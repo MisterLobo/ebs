@@ -63,8 +63,15 @@ export function EventPageHeaderActions({ event }: Props) {
         <PlusIcon />
         <span>NEW TICKET</span>
       </Button>
-      {['draft', 'notify'].includes(event?.status ?? '') && <Button type="button" className="cursor-pointer" onClick={publish} disabled={!onboardingComplete || loading || busy}><Send />{ busy ? 'PUBLISHING' : 'PUBLISH' }</Button>}
-      {event?.status === 'registration' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={openAdm}>OPEN ADMISSION</Button>}{event?.status === 'admission' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={closeAdm}>CLOSE ADMISSION</Button>}
+      {event?.status === 'notify' &&
+        <Button type="button" className="cursor-pointer" onClick={publish} disabled={!onboardingComplete || loading || busy}><Send />{ busy ? 'REQUESTING' : 'CANCEL' }</Button>
+      }
+      {['draft', 'notify'].includes(event?.status ?? '') &&
+        <Button type="button" className="cursor-pointer" onClick={publish} disabled={!onboardingComplete || loading || busy}><Send />{ busy ? 'PUBLISHING' : 'PUBLISH' }</Button>
+      }
+      {event?.status === 'registration' &&
+        <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={openAdm}>OPEN ADMISSION</Button>}{event?.status === 'admission' && <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none" onClick={closeAdm}>CLOSE ADMISSION</Button>
+      }
     </div>
   )
 }

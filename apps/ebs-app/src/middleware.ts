@@ -1,7 +1,7 @@
 import { createNEMO, type GlobalMiddlewareConfig, type MiddlewareConfig } from '@rescale/nemo'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
-import { getActiveOrganization } from './lib/actions'
+import { getActiveOrganization, logout } from './lib/actions'
 import { Organization } from './lib/types'
 // import { auth as authMiddleware } from '@/auth'
 
@@ -27,7 +27,6 @@ const globalMiddlewares = {
     const requestHeaders = new Headers(request.headers)
     const url = request.url
     requestHeaders.set('x-url', url)
-    console.log('[x-url]:', requestHeaders.get('x-url'))
   }
 } satisfies GlobalMiddlewareConfig
 
@@ -61,7 +60,7 @@ const middlewares = {
       }
       const org = await getActiveOrganization() as Organization
       if (!org) {
-        $cookies.delete('token')
+        await logout()
         return NextResponse.redirect(new URL('/login', request.url))
       }
 

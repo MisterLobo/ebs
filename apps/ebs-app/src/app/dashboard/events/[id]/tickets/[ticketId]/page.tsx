@@ -1,8 +1,8 @@
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { getEventById, getTicket, getTicketBookings, getTicketReservations } from '@/lib/actions'
-import { importURLPatternPolyfill } from '@/lib/utils'
+import { getActiveOrganization, getOrgEventById, getTicket, getTicketBookings, getTicketReservations } from '@/lib/actions'
+import { cn, importURLPatternPolyfill } from '@/lib/utils'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
@@ -23,7 +23,8 @@ export default async function TicketPage() {
   const result = urlPattern.exec(url as string)
   const id = result?.pathname.groups.id ?? '0'
   const eventId = parseInt(id)
-  const eventData = await getEventById(eventId)
+  const org = await getActiveOrganization()
+  const eventData = await getOrgEventById(org?.id as number, eventId)
   if (!eventData) {
     throw notFound()
   }
@@ -120,7 +121,7 @@ export default async function TicketPage() {
               </div>
               <div className="flex flex-col">
                 <p className="text-sm">Status</p>
-                <p className="text-xl">{ticket?.event?.status}</p>
+                <p className={cn('text-xl', ticket?.event?.status === 'expired' && 'text-red-500')}>{ticket?.event?.status}</p>
               </div>
               <div className="flex flex-col">
                 <p className="text-sm">Name</p>

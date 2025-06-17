@@ -62,7 +62,7 @@ export default function SettingsGeneralForm({ resolver }: Props) {
           name="email"
           render={({ field }) => (
             <FormItem className="w-full my-4 col-span-2">
-              <FormLabel htmlFor="email">Email<span className="text-red-600">*</span></FormLabel>
+              <FormLabel htmlFor="email">Contact Email<span className="text-red-600">*</span></FormLabel>
               <div className="flex flex-row gap-2">
                 <FormControl>
                   <Input

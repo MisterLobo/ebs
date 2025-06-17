@@ -27,7 +27,8 @@ export default function LoginForm() {
     try {
       const credential = await signInWithPopup(auth, provider)
       if (credential.user) {
-        const { error } = await loginUser(credential.user.email as string)
+        const idToken = await credential.user.getIdToken()
+        const { error } = await loginUser(credential.user.email as string, idToken)
         if (error) {
           setError(error)
           return
@@ -35,7 +36,7 @@ export default function LoginForm() {
         router.push('/personal/dashboard')
       }
     } catch (error: any) {
-      alert(`[error]: ${error.message}`)
+      alert(error.message)
     }
   }
 

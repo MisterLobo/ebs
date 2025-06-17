@@ -101,7 +101,7 @@ const data = {
         },
         {
           title: 'Templates',
-          url: '/dashboard/tickets_templates',
+          url: '/dashboard/tickets/templates',
         },
       ],
     },

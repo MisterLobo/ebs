@@ -42,8 +42,9 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     ".next/types/**/*.ts",
-    "src/**/*.json"
-  ],
+    "src/**/*.json",
+    "public/assets/firebase-messaging-sw.js"
+, "src/lib/fcm.tst"  ],
   "exclude": [
     "out-tsc",
     "dist",

@@ -13,6 +13,19 @@ Live Demo: https://app.silver-elven.cc
 
 Silver Elven is an event booking system that aims to provide a platform for hosting events, buying and selling tickets with a simple and easy-to-use user interface. This platform is focused on events that are open and do not require reservations that depend on seating arrangements. In other words, this is intended for a first-come first-served or General Admission events only.
 
+## SCREENSHOTS
+![Reserved tickets](screenshots/booking-tickets.png)
+![List of booked tickets](screenshots/bookings-page.png)
+![Buy tickets](screenshots/buy-tickets.png)
+![Buy tickets](screenshots/buy-tickets-2.png)
+![Email notification for opening of ticket registrations](screenshots/eventopen-email-sample.png)
+![email notification for closing of ticket registrations](screenshots/eventclosed-email-sample.png)
+![events page](screenshots/events-page.png)
+![create event](screenshots/create-event.png)
+![dashboard](screenshots/dashboard.png)
+![events page](screenshots/events-page-2.png)
+![waitlist](screenshots/waitlist.png)
+
 ## Project Details
 This is a monorepo using Nx for running, testing and managing projects
 - `ebs-app`: frontend web application
@@ -49,6 +62,7 @@ This is a monorepo using Nx for running, testing and managing projects
 - Multi tenancy, RBAC
 - Swagger API docs
 - UI/UX improvements
+- Proper icons, logo, etc.
 
 ## LIMITATIONS
 - Events hosted are only for General Admission types.

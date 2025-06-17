@@ -22,7 +22,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/api/src/",
-        "command": "go test"
+        "command": "go test -race"
       }
     }
   },

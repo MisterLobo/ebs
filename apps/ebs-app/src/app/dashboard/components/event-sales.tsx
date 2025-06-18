@@ -173,7 +173,7 @@ export function TopEventSales({
 }: {
   fetcher: Promise<z.infer<typeof schema>[]>,
 }) {
-  const data = use(fetcher)
+  const data = use(fetcher) ?? []
   const { t1, t2, t3, t4 } = useMemo(() => {
     const t1 = Array.from(data).sort((a, b) => (b.total_rev ?? 0) - (a.total_rev ?? 0))
     const t2 = Array.from(data).sort((a, b) => (b.total_qty ?? 0) - (a.total_qty ?? 0))

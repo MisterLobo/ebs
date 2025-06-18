@@ -426,11 +426,12 @@ func setupSocketServer(r *gin.Engine) *socket.Server {
 }
 
 func main() {
+	boot.InitDb()
+
 	go boot.DownloadSDKFileFromS3()
 	go lib.StripeInitialize()
-	go boot.InitDb()
+	// go boot.InitScheduler()
 	go boot.InitBroker()
-	go boot.InitScheduler()
 
 	router := setupRouter()
 	wss := setupSocketServer(router)

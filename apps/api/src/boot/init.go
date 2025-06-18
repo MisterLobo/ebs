@@ -133,6 +133,8 @@ func InitBroker() {
 }
 
 func InitQueues() {
+	emailQueue := os.Getenv("EMAIL_QUEUE")
+	lib.SQSCreateQueue(emailQueue)
 	lib.SQSCreateQueue("PendingReservations")
 	lib.SQSCreateQueue("PendingTransactions")
 	lib.SQSCreateQueue("PaymentsProcessing")

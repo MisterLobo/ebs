@@ -8,7 +8,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var redisClient *redis.Client
+
 func GetRedisClient() *redis.Client {
+	if redisClient != nil {
+		return redisClient
+	}
 	redisHost := os.Getenv("REDIS_HOST")
 	opt, err := redis.ParseURL(redisHost)
 	if err != nil {
@@ -16,6 +21,7 @@ func GetRedisClient() *redis.Client {
 		return nil
 	}
 	rdb := redis.NewClient(opt)
+	redisClient = rdb
 	return rdb
 }
 
@@ -35,4 +41,10 @@ func TestRedis() {
 	} else {
 		log.Printf("Value is %v\n", val)
 	}
+}
+
+// NewRedisClient Replace redis instance with custom client implementation
+func NewRedisClient(c *redis.Client) *redis.Client {
+	redisClient = c
+	return redisClient
 }

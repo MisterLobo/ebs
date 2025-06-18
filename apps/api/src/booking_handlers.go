@@ -110,7 +110,7 @@ func bookingHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return err
 				}
 				if booking.TransactionID == nil {
-					err := fmt.Errorf("No transaction found for Booking [%d]\n", params.ID)
+					err := fmt.Errorf("no transaction found for Booking [%d]", params.ID)
 					log.Println(err)
 					return err
 				}
@@ -192,25 +192,9 @@ func bookingHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 						return err
 					}
 				} else if body.Type == "reservation" {
-					/* if err := tx.
-						Model(&models.Booking{}).
-						Where("id IN (?)", body.IDs).
-						Update("status", "canceled").
-						Error; err != nil {
-						log.Printf("Could not update booking %v: %s\n", body.IDs, err.Error())
-						return err
-					}
-					if err := tx.
-						Model(&models.Reservation{}).
-						Where("booking_id IN (?)", &body.IDs).
-						Update("status", "canceled").
-						Error; err != nil {
-						log.Printf("Could not update Reservation for Booking %v: %s\n", body.IDs, err.Error())
-						return err
-					} */
-					return errors.New("Updating status for individual Booking is not allowed")
+					return errors.New("updating status for individual Booking is not allowed")
 				} else {
-					err := errors.New("Invalid type")
+					err := errors.New("invalid type")
 					return err
 				}
 				return nil

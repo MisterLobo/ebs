@@ -9,13 +9,13 @@ import (
 
 type TicketStatus types.Status
 
-func (self *TicketStatus) Scan(value interface{}) error {
-	*self = TicketStatus(value.([]byte))
+func (s *TicketStatus) Scan(value interface{}) error {
+	*s = TicketStatus(value.([]byte))
 	return nil
 }
 
-func (self TicketStatus) Value() (driver.Value, error) {
-	return string(self), nil
+func (s TicketStatus) Value() (driver.Value, error) {
+	return string(s), nil
 }
 
 type Ticket struct {
@@ -30,7 +30,7 @@ type Ticket struct {
 	EventID       uint            `json:"event_id,omitempty"`
 	StripePriceId *string         `json:"-"`
 	Metadata      *types.Metadata `gorm:"type:jsonb" json:"metadata"`
-	Identifier    *string         `json:"resource_id"`
+	Identifier    *string         `gorm:"<-:create" json:"resource_id"`
 	TenantID      *uuid.UUID      `gorm:"type:uuid" json:"-"`
 
 	Event    *Event    `json:"event,omitempty"`
@@ -42,17 +42,19 @@ type Ticket struct {
 }
 
 type TicketStats struct {
-	TicketID uint `json:"ticket_id,omitempty"`
-	Free     uint `json:"free,omitempty"`
-	Reserved uint `json:"reserved,omitempty"`
+	TicketID   uint    `json:"ticket_id,omitempty"`
+	Free       uint    `json:"free,omitempty"`
+	Reserved   uint    `json:"reserved,omitempty"`
+	Identifier *string `gorm:"<-:create" json:"resource_id"`
 }
 
 type TicketTransfer struct {
-	ID            string `json:"-"`
-	ReservationID uint   `json:"reservation_id,omitempty"`
-	OldOwnerID    uint   `json:"-"`
-	NewOwnerID    uint   `json:"owner_id"`
-	Status        string `json:"status,omitempty"`
+	ID            string  `json:"-"`
+	ReservationID uint    `json:"reservation_id,omitempty"`
+	OldOwnerID    uint    `json:"-"`
+	NewOwnerID    uint    `json:"owner_id"`
+	Status        string  `json:"status,omitempty"`
+	Identifier    *string `gorm:"<-:create" json:"resource_id"`
 
 	types.Timestamps
 }

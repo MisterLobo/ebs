@@ -41,6 +41,7 @@ func InitDb() *gorm.DB {
 		&models.Permission{},
 		&models.RolePermission{},
 		&models.Rating{},
+		&models.Notification{},
 	)
 	if err != nil {
 		log.Fatalf("error migration: %s", err.Error())
@@ -49,6 +50,35 @@ func InitDb() *gorm.DB {
 	CREATE OR REPLACE FUNCTION set_tenant(tenant_id text) RETURNS void AS $$
 	BEGIN
 		PERFORM set_config('app.current_tenant', tenant_id, false);
+	END;
+	$$ LANGUAGE plpgsql;
+
+	CREATE OR REPLACE FUNCTION daily_transactions(org_id INT)
+	RETURNS TABLE (
+		txn_date TEXT,
+		completed_txn BIGINT,
+		pending_txn BIGINT,
+		total_txn BIGINT,
+		total_revenue NUMERIC
+	) AS $$
+	BEGIN
+		RETURN QUERY
+		SELECT
+			TO_CHAR(d::date, 'YYYY-MM-DD') AS txn_date,
+			COUNT(DISTINCT CASE WHEN t.status = 'paid' THEN 1 END) AS completed_txn,
+			COUNT(DISTINCT CASE WHEN t.status = 'pending' THEN 1 END) AS pending_txn,
+			COUNT(DISTINCT t.id) AS total_txn,
+			COALESCE(SUM(DISTINCT t.amount_paid),0) AS total_revenue
+		FROM generate_series(
+			CURRENT_DATE - INTERVAL '30 days',
+			CURRENT_DATE,
+			INTERVAL '1 day'
+		) as d
+		LEFT JOIN events e ON e.organizer_id=org_id
+		LEFT JOIN bookings b ON b.event_id=e.id
+		LEFT JOIN transactions t ON t.id=b.transaction_id AND t.created_at::date = d::date
+		GROUP BY d.d
+		ORDER BY d.d;
 	END;
 	$$ LANGUAGE plpgsql;
 	`).Error; err != nil {
@@ -74,27 +104,52 @@ func InitBroker() {
 	} else {
 		var eventsToOpenConsumer types.Handler = common.KafkaEventsToOpenConsumer
 		go lib.KafkaConsumer("events", "EventsToOpen", &eventsToOpenConsumer)
+
 		var eventsToCloseConsumer types.Handler = common.KafkaEventsToCloseConsumer
 		go lib.KafkaConsumer("events", "EventsToClose", &eventsToCloseConsumer)
+
 		var eventsToCompleteConsumer types.Handler = common.KafkaEventsToCompleteConsumer
 		go lib.KafkaConsumer("events", "EventsToComplete", &eventsToCompleteConsumer)
-		var emailsToSendConsumer types.Handler = common.EmailsToSendConsumer
-		go lib.KafkaConsumer("emails", "EmailsToSend", &emailsToSendConsumer)
-		go lib.KafkaCreateTopics("events-open", "events-close", "EventsToOpen", "EventsToClose", "EventsToComplete", "EmailsToSend")
-	}
-	go lib.TestRedis()
 
+		emailQueue := os.Getenv("EMAIL_QUEUE")
+		var emailsToSendConsumer types.Handler = common.EmailsToSendConsumer
+		go lib.KafkaConsumer("emails", emailQueue, &emailsToSendConsumer)
+
+		var pendingTxnConsumer types.Handler = common.KafkaPendingTransactionsConsumer
+		go lib.KafkaConsumer("transactions", "PendingTransactions", &pendingTxnConsumer)
+
+		var kafkaPaymentTransactionUpdatesConsumer types.Handler = common.KafkaPaymentTransactionUpdatesConsumer
+		go lib.KafkaConsumer("payments", "PaymentTransactionUpdates", &kafkaPaymentTransactionUpdatesConsumer)
+
+		go lib.KafkaCreateTopics(
+			"EventsToOpen",
+			"EventsToClose",
+			"EventsToComplete",
+			"PendingTransactions",
+			"PaymentTransactionUpdates",
+			emailQueue,
+		)
+	}
 }
 
 func InitQueues() {
+	emailQueue := os.Getenv("EMAIL_QUEUE")
+	lib.SQSCreateQueue(emailQueue)
 	lib.SQSCreateQueue("PendingReservations")
 	lib.SQSCreateQueue("PendingTransactions")
 	lib.SQSCreateQueue("PaymentsProcessing")
 	lib.SQSCreateQueue("ExpiredBookings")
 	lib.SQSCreateQueue("PaymentTransactionUpdates")
+	lib.SQSCreateQueue("PaymentTransactionUpdates")
 }
 func InitTopics() {
-	// lib.SNSCreateTopic("ExpiredBookings")
+	lib.SNSCreateTopic("EventsToOpen")
+	lib.SNSCreateTopic("EventsToClose")
+	lib.SNSCreateTopic("EventsToComplete")
+	lib.SNSCreateTopic("PendingTransactions")
+
+	emailQueue := os.Getenv("EMAIL_QUEUE")
+	lib.SNSCreateTopic(emailQueue)
 }
 
 func InitScheduler() {
@@ -127,7 +182,7 @@ func StopScheduler() {
 	}
 	err = sched.Shutdown()
 	if err != nil {
-		log.Println("An error has occurred while shutting stopping Scheduler. Check logs for info")
+		log.Println("An error has occurred while shutting down Scheduler. Check logs for info")
 		return
 	}
 }
@@ -254,8 +309,6 @@ func StatusUpdateExpiredBookings() {
 }
 
 func DownloadSDKFileFromS3() {
-	cwd, _ := os.Getwd()
-	log.Printf("[S3] cwd:%s\n", cwd)
 	filename := "admin-sdk-credentials.json"
 	secretsPath := os.Getenv("SECRETS_DIR")
 	sdkFilePath := path.Join(secretsPath, filename)

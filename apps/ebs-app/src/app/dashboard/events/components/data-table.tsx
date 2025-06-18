@@ -111,6 +111,8 @@ export const schema = z.object({
   title: z.string(),
   type: z.string(),
   location: z.string(),
+  opensAt: z.string().date().optional(),
+  deadline: z.string().date().optional(),
   dateTime: z.string().date(),
   status: z.string(),
   createdBy: z.number(),
@@ -167,6 +169,28 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
       return <p>{row.original.name}</p>
     },
     enableHiding: false,
+  },
+  {
+    accessorKey: "opensAt",
+    header: "Reservations open",
+    cell: ({ row }) => (
+      <div className="w-32">
+        <Badge variant="outline" className="px-1.5 text-muted-foreground">
+          {row.original.opensAt}
+        </Badge>
+      </div>
+    ),
+  },
+  {
+    accessorKey: "deadline",
+    header: "Reservations close",
+    cell: ({ row }) => (
+      <div className="w-32">
+        <Badge variant="outline" className="px-1.5 text-muted-foreground">
+          {row.original.deadline}
+        </Badge>
+      </div>
+    ),
   },
   {
     accessorKey: "dateTime",
@@ -301,7 +325,7 @@ export function DataTable({
     const notify = data.filter(v => v.status === 'notify')
     const registration = data.filter(v => v.status === 'registration')
     const admission = data.filter(v => v.status === 'admission')
-    const completed = data.filter(v => v.status === 'completed')
+    const completed = data.filter(v => ['completed', 'closed'].includes(v.status))
     const canceled = data.filter(v => v.status === 'canceled')
     const expired = data.filter(v => v.status === 'expired')
     return {
@@ -528,7 +552,8 @@ export function DataTable({
           </SelectContent>
         </Select>
         <TabsList className="@4xl/main:flex hidden">
-          <TabsTrigger value="events-draft">Draft{" "}
+          <TabsTrigger value="events-draft" className="gap-1">
+            <span>Draft </span>
             {draft.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -536,7 +561,8 @@ export function DataTable({
               {draft.length}
             </Badge>}
           </TabsTrigger>
-          <TabsTrigger value="events-notify">Notify{" "}
+          <TabsTrigger value="events-notify" className="gap-1">
+            <span>Notify</span>
             {notify.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -545,7 +571,7 @@ export function DataTable({
             </Badge>}
           </TabsTrigger>
           <TabsTrigger value="events-registration" className="gap-1">
-            Registration{" "}
+            <span>Registration</span>
             {registration.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -554,7 +580,7 @@ export function DataTable({
             </Badge>}
           </TabsTrigger>
           <TabsTrigger value="events-admission" className="gap-1">
-            Admission{" "}
+            <span>Admission</span>
             {admission.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -562,7 +588,8 @@ export function DataTable({
               {admission.length}
             </Badge>}
           </TabsTrigger>
-          <TabsTrigger value="events-completed">Completed{" "}
+          <TabsTrigger value="events-completed" className="gap-1">
+            <span>Completed</span>
             {completed.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -570,7 +597,8 @@ export function DataTable({
               {completed.length}
             </Badge>}
           </TabsTrigger>
-          <TabsTrigger value="events-canceled">Canceled{" "}
+          <TabsTrigger value="events-canceled" className="gap-1">
+            <span>Canceled</span>
             {canceled.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -578,7 +606,8 @@ export function DataTable({
               {canceled.length}
             </Badge>}
           </TabsTrigger>
-          <TabsTrigger value="events-expired">Expired{" "}
+          <TabsTrigger value="events-expired" className="gap-1">
+            <span>Expired</span>
             {expired.length > 0 && <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"

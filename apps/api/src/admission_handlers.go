@@ -70,10 +70,10 @@ func admissionHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return err
 				}
 				if reservation.Booking.Event.Status == types.EVENT_COMPLETED {
-					return errors.New("Ticket admissions are no longer accepted")
+					return errors.New("ticket admissions are no longer accepted")
 				}
 				if reservation.Booking.Event.Status != types.EVENT_ADMISSION {
-					return errors.New("Ticket admissions are not accepted")
+					return errors.New("ticket admissions are not accepted")
 				}
 				admission := models.Admission{
 					ReservationID: reservationId,
@@ -90,7 +90,7 @@ func admissionHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return err
 				}
 				if admission.ID > 0 {
-					return errors.New("Cannot admit. Reservation already completed")
+					return errors.New("cannot admit. Reservation already completed")
 				}
 				err = tx.Create(&admission).Error
 				if err != nil {
@@ -106,7 +106,7 @@ func admissionHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				return nil
 			})
 			if err != nil {
-				err := fmt.Errorf("Error on Ticket admission: %s\n", err.Error())
+				err := fmt.Errorf("error on Ticket admission: %s", err.Error())
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}

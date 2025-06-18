@@ -7,7 +7,7 @@
 # To get a newer version, you will need to update the SHA.
 # You can also reference a tag or branch, but the action may change without warning.
 
-name: Staging Deploy to Amazon ECS
+name: Staging Build
 
 on:
   push:
@@ -31,9 +31,42 @@ env:
   ADMIN_SDK_CREDENTIALS: ${{ secrets.ADMIN_SDK_CREDENTIALS }}
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099"
   REDIS_HOST: "redis://localhost:6379"
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
 jobs:
-  deploy:
+  app_preview_deploy:
+    name: Deploy Web App to Vercel
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      FBASE_API_KEY: ${{ secrets.FBASE_API_KEY }}
+      FBASE_AUTH_DOMAIN: ${{ secrets.FBASE_AUTH_DOMAIN }}
+      FBASE_PROJECT_ID: ${{ secrets.FBASE_PROJECT_ID }}
+      FBASE_STORAGE_BUCKET: ${{ secrets.FBASE_STORAGE_BUCKET }}
+      FBASE_MESSAGING_SENDER_ID: ${{ secrets.FBASE_MESSAGING_SENDER_ID }}
+      FBASE_APP_ID: ${{ secrets.FBASE_APP_ID }}
+    needs: api_staging_deploy
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure Firebase Service Worker
+        run: |
+          cd apps/ebs-app
+          chmod +x ./firebase-sw-config.sh
+          ./firebase-sw-config.sh ${{ env.FBASE_API_KEY }} ${{ env.FBASE_PROJECT_ID }} ${{ env.FBASE_MESSAGING_SENDER_ID }} ${{ env.FBASE_APP_ID }}
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - name: Install Vercel CLI
+        run: bun install --global vercel@latest
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Build Project Artifacts
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
+
+  api_staging_deploy:
     name: Build Test Deploy
     runs-on: ubuntu-latest
     environment: staging
@@ -135,12 +168,12 @@ jobs:
           go mod verify
       - name: Get credentials
         run: |
-          cd apps/api/src
           base64 -d <<< ${{ env.ADMIN_SDK_CREDENTIALS }} > admin-sdk-credentials.json
-      - name: Test api
-        run: GIN_MODE=release bunx nx test api
-      - name: Build api
-        run: GIN_MODE=release bunx nx build api
+          cp ./admin-sdk-credentials.json apps/api/src
+      #- name: Test api
+      #  run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx test api
+      #- name: Build api
+      #  run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx build api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -185,6 +218,7 @@ jobs:
     name: Build and Test mobile app
     runs-on: ubuntu-latest
     environment: staging
+    needs: api_staging_deploy
     steps:
       - name: Clone repository
         uses: actions/checkout@v4

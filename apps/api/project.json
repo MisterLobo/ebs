@@ -8,21 +8,21 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/api/src/",
-        "command": "go build -o ../dist/packages/api ./*.go"
+        "command": "go build -race -o ../dist/packages/api ./*.go"
       }
     },
     "serve": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/api/src/",
-        "command": "air"
+        "command": "air --build.cmd \"go build -race -o tmp/main ./*.go\""
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/api/src/",
-        "command": "go test"
+        "command": "go test -race"
       }
     }
   },

@@ -8,12 +8,12 @@ const { composePlugins, withNx } = require('@nx/next');
  **/
 const nextConfig = {
   env: {
-    FBASE_API_KEY: process.env.FBASE_API_KEY,
-    FBASE_AUTH_DOMAIN: process.env.FBASE_AUTH_DOMAIN,
-    FBASE_PROJECT_ID: process.env.FBASE_PROJECT_ID,
-    FBASE_STORAGE_BUCKET: process.env.FBASE_STORAGE_BUCKET,
-    FBASE_MESSAGING_SENDER_ID: process.env.FBASE_MESSAGING_SENDER_ID,
-    FBASE_APP_ID: process.env.FBASE_APP_ID,
+    NEXT_PUBLIC_FBASE_API_KEY: process.env.FBASE_API_KEY,
+    NEXT_PUBLIC_FBASE_AUTH_DOMAIN: process.env.FBASE_AUTH_DOMAIN,
+    NEXT_PUBLIC_FBASE_PROJECT_ID: process.env.FBASE_PROJECT_ID,
+    NEXT_PUBLIC_FBASE_STORAGE_BUCKET: process.env.FBASE_STORAGE_BUCKET,
+    NEXT_PUBLIC_FBASE_MESSAGING_SENDER_ID: process.env.FBASE_MESSAGING_SENDER_ID,
+    NEXT_PUBLIC_FBASE_APP_ID: process.env.FBASE_APP_ID,
   },
   nx: {
     // Set this to true if you would like to use SVGR

@@ -4,7 +4,7 @@ type Timestamps = {
   deleted_at?: string,
 }
 
-type EventStatus = 'draft' | 'open' | 'notify' | 'closed' | 'archived' | 'registration' | 'admission'
+type EventStatus = 'draft' | 'open' | 'notify' | 'closed' | 'archived' | 'registration' | 'admission' | 'expired'
 
 export type NewOrganizationRequestPayload = {
   name?: string,

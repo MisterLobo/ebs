@@ -24,7 +24,8 @@ export default function RegisterForm() {
     try {
       const credential = await signInWithPopup(auth, provider)
       if (credential.user) {
-        const { error } = await registerUser(credential.user.email as string)
+        const idToken = await credential.user.getIdToken()
+        const { error } = await registerUser(credential.user.email as string, idToken)
         if (error) {
           setError(error)
           return

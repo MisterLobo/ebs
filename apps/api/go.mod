@@ -1,6 +1,6 @@
 module ebs
 
-go 1.24
+go 1.24.1
 
 toolchain go1.24.4
 
@@ -137,20 +137,43 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	firebase.google.com/go/v4 v4.16.0 // indirect
 	github.com/MicahParks/keyfunc v1.9.0 // indirect
+	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dkinzler/kit v0.4.2 // indirect
+	github.com/go-redis/redismock/v9 v9.2.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.2 // indirect
+	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
+	github.com/google/pprof v0.0.0-20230821062121-407c9e7a662f // indirect
+	github.com/gookit/color v1.5.4 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/gosimple/unidecode v1.0.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/mattn/go-sqlite3 v1.14.28 // indirect
 	github.com/microsoft/go-mssqldb v1.8.2 // indirect
+	github.com/onsi/ginkgo/v2 v2.12.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/pusher/pusher-http-go/v5 v5.1.1 // indirect
+	github.com/quic-go/qpack v0.5.1 // indirect
+	github.com/quic-go/quic-go v0.51.0 // indirect
+	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
+	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
+	github.com/zishang520/engine.io-go-parser v1.3.2 // indirect
+	github.com/zishang520/engine.io/v2 v2.4.13 // indirect
+	github.com/zishang520/socket.io-go-parser/v2 v2.4.6 // indirect
+	github.com/zishang520/socket.io/v2 v2.4.11 // indirect
+	github.com/zishang520/webtransport-go v0.8.7 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
+	go.uber.org/mock v0.5.1 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
+	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/tools v0.31.0 // indirect
 	google.golang.org/appengine/v2 v2.0.6 // indirect
 	gorm.io/driver/mysql v1.5.7 // indirect
 	gorm.io/driver/sqlite v1.5.7 // indirect

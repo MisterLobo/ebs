@@ -17,6 +17,7 @@ type Team struct {
 	Organization *Organization `gorm:"foreignKey:organization_id" json:"-"`
 	Members      []*User       `gorm:"many2many:team_members;References:ID;joinReferences:UserID" json:"members,omitempty"`
 	TenantID     *uuid.UUID    `gorm:"type:uuid" json:"-"`
+	Identifier   *string       `gorm:"<-:create" json:"resource_id"`
 
 	types.Timestamps
 }

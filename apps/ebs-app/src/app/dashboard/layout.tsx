@@ -1,9 +1,11 @@
 import { AppSidebar } from '@/components/app-sidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
-import { getActiveOrganization, listOrganizations, organizationOnboarding } from '@/lib/actions'
-import { notFound, redirect } from 'next/navigation'
+import { getActiveOrganization, listOrganizations, organizationOnboarding, subscribeToFCMTopics } from '@/lib/actions'
+import { notFound } from 'next/navigation'
 import { ReactNode } from 'react'
 import { OnboardingNotice } from './components/notice'
+import { WebWorker } from '@/components/worker'
+import FCM from '@/components/fcm'
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const orgs = await listOrganizations()
@@ -11,16 +13,19 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   if (!org) {
     throw notFound()
   }
-  if (org.type === 'personal') {
-    redirect('/setup/organizations/create')
-  }
-  const { completed, url } = await organizationOnboarding(org?.id ?? 0)
+  const { completed, account_id, url } = await organizationOnboarding(org?.id ?? 0)
 
+  const tokenRetrieved = async (token: string) => {
+    'use server'
+    await subscribeToFCMTopics(token, 'EventSubscription', 'Events', 'Personal')
+  }
+  
   return (
+    <>
     <SidebarProvider>
       <AppSidebar teams={orgs} />
       <SidebarInset>
-        {!completed &&
+        {(!completed && !account_id) &&
         <div className="flex w-full items-center justify-center">
           <OnboardingNotice url={url} />
         </div>
@@ -28,5 +33,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         { children }
       </SidebarInset>
     </SidebarProvider>
+    <WebWorker />
+    <FCM tokenRetrieved={tokenRetrieved} />
+    </>
   )
 }

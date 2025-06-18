@@ -134,8 +134,9 @@ func (e *EventBridgeScheduler) Name() string {
 }
 
 func (e *EventBridgeScheduler) CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB, fn *types.KafkaTaskHandler) (*uuid.UUID, error) {
-	name := ctx.Value("name").(string)
-	topic := ctx.Value("topic").(string)
+	vars := ctx.Value("vars").(map[string]string)
+	name := vars["name"]
+	topic := vars["topic"]
 	in := *e.inner
 	bPayload, _ := json.Marshal(p)
 	input := string(bPayload)
@@ -179,7 +180,7 @@ func (l *LocalScheduler) CreateScheduleWithStartDate(ctx context.Context, s time
 		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(s)),
 		gocron.NewTask(func(ctx context.Context, p types.JSONB) {
 			log.Println("[LOCALSCHEDULER] Running scheduled task...")
-			KafkaTaskHandlerFunc(&ctx, &p)
+			KafkaTaskHandlerFunc(ctx, &p)
 		}, ctx, p),
 	)
 	if err != nil {
@@ -215,13 +216,17 @@ func CreateScheduler() Scheduler {
 	return local
 }
 
+type Key string
+
+const (
+	varsKey Key = "vars"
+)
+
 // Wrapper for creating scheduled job based on the app environment. local will use the LocalScheduler otherwise will use AWS EventBridge Scheduler
 func NewScheduledJob(startDate time.Time, vars map[string]string, p types.JSONB) (*uuid.UUID, error) {
 	sch := CreateScheduler()
 	ctx := context.Background()
-	for k, v := range vars {
-		ctx = context.WithValue(ctx, k, v)
-	}
+	ctx = context.WithValue(ctx, varsKey, vars)
 	log.Printf("Created scheduler with name: %s\n", sch.Name())
 
 	var h types.KafkaTaskHandler = KafkaTaskHandlerFunc
@@ -232,9 +237,9 @@ func NewScheduledJob(startDate time.Time, vars map[string]string, p types.JSONB)
 	return sid, nil
 }
 
-func KafkaTaskHandlerFunc(ctx *context.Context, p *types.JSONB) {
-	cx := *ctx
-	clientId := cx.Value("clientId").(string)
-	topic := cx.Value("topic").(string)
+func KafkaTaskHandlerFunc(ctx context.Context, p *types.JSONB) {
+	vars := ctx.Value(varsKey).(map[string]string)
+	clientId := vars["clientId"]
+	topic := vars["topic"]
 	go KafkaProduceMessage(clientId, topic, p)
 }

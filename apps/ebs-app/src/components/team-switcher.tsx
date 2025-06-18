@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronsUpDown, Plus, TicketIcon } from 'lucide-react'
+import { Check, ChevronsUpDown, Plus, TicketIcon } from 'lucide-react'
 
 import {
   DropdownMenu,
@@ -47,6 +47,9 @@ export function TeamSwitcher({
   }
 
   const switchToOrg = useCallback(async (org: Organization) => {
+    if (org.id === activeOrg?.id) {
+      return
+    }
     const switched = await switchOrganization(org.id)
     if (switched) {
       location.reload()
@@ -102,6 +105,19 @@ export function TeamSwitcher({
               Organizations
             </DropdownMenuLabel>
             {organizations.map((org, index) => (
+              activeOrg?.id === org.id ?
+              <DropdownMenuItem
+                key={index}
+                className="gap-2 p-2 pointer-events-none"
+              >
+                <div className="flex size-6 items-center justify-center rounded-sm border">
+                  <TicketIcon className="size-4 shrink-0" />
+                </div>
+                {org.name}
+                <DropdownMenuShortcut>
+                  <Check />
+                </DropdownMenuShortcut>
+              </DropdownMenuItem> :
               <DropdownMenuItem
                 key={index}
                 onClick={() => switchToOrg(org)}

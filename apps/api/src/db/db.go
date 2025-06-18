@@ -20,6 +20,9 @@ func GetDb() *gorm.DB {
 		panic(err)
 	}
 	sqlDB, err := _db.DB()
+	if err != nil {
+		log.Fatalf("Error establishing connection to database: %s\n", err.Error())
+	}
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
 

@@ -203,7 +203,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "name",
     header: "Event",
     cell: ({ row }) => {
-      return <Link className="hover:underline" href={`/dashboard/events/${row.original.event.id}`}>{row.original.event.name}</Link>
+      return <Link className="hover:underline" href={`/dashboard/events/${row.original.event?.id}`}>{row.original.event?.name ?? '-'}</Link>
     },
     enableHiding: false,
   },
@@ -212,10 +212,10 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     header: "Ticket (Price)",
     cell: ({ row }) => (
       <Link
-        href={`/dashboard/events/${row.original.event.id}/tickets/${row.original.ticket_id}`}
+        href={`/dashboard/events/${row.original.event?.id}/tickets/${row.original.ticket_id}`}
         className="flex gap-1 px-1.5 text-muted-foreground [&_svg]:size-3 hover:underline"
       >
-        {row.original.ticket.tier} ({`${row.original.ticket.currency}`.toUpperCase()} {row.original.ticket.price})
+        {row.original.ticket?.tier ?? '-'} {`${row.original.ticket?.currency ? `(${row.original.ticket?.currency})` : '-'}`.toUpperCase()} {row.original.ticket?.price}
       </Link>
     ),
   },
@@ -660,7 +660,7 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
       </SheetTrigger>
       <SheetContent side="right" className="flex flex-col">
         <SheetHeader className="gap-1">
-          <SheetTitle>{item.event.name}</SheetTitle>
+          <SheetTitle>{item.event?.name}</SheetTitle>
           <SheetDescription>
             Showing total visitors for the last 6 months
           </SheetDescription>
@@ -726,12 +726,12 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
           <form className="flex flex-col gap-4">
             <div className="flex flex-col gap-3">
               <Label htmlFor="header">Tier</Label>
-              <p>{item.ticket.tier}</p>
+              <p>{item.ticket?.tier}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-3">
                 <Label htmlFor="type">Type</Label>
-                <p>{item.ticket.type}</p>
+                <p>{item.ticket?.type}</p>
               </div>
               <div className="flex flex-col gap-3">
                 <Label htmlFor="status">Status</Label>

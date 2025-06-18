@@ -5,7 +5,6 @@ import { SetupActions } from './components/actions'
 export default async function OnboardingSetup() {
   const org = await getActiveOrganization()
   const { completed, data } = await organizationOnboarding(org?.id as number)
-  console.log('data:', completed, data);
   
   return (
     <div className="container pt-10">

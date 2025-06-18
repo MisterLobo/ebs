@@ -1,12 +1,13 @@
-import { ThemeProvider } from '@/components/theme-provider';
-import './global.css';
-import { cn } from '@/lib/utils';
-import { cookies } from 'next/headers';
-import { fontVariables } from "@/lib/fonts";
-import { Toaster } from '@/components/ui/sonner';
+import { ThemeProvider } from '@/components/theme-provider'
+import './global.css'
+import { cn } from '@/lib/utils'
+import { cookies } from 'next/headers'
+import { fontVariables } from "@/lib/fonts"
+import { Toaster } from '@/components/ui/sonner'
+import { Metadata } from 'next'
 
-export const metadata = {
-  title: 'EBS',
+export const metadata: Metadata = {
+  title: 'Silver Elven',
   description: 'Event booking system',
 };
 

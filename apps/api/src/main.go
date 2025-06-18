@@ -24,12 +24,15 @@ import (
 	"strconv"
 	"time"
 
+	"firebase.google.com/go/v4/messaging"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stripe/stripe-go/v82"
+	engineiotypes "github.com/zishang520/engine.io/v2/types"
+	"github.com/zishang520/socket.io/v2/socket"
 	"gorm.io/gorm"
 )
 
@@ -38,11 +41,30 @@ type Claims struct {
 	Role         string   `json:"role"`
 	Permissions  []string `json:"permissions"`
 	Organization uint
+	UID          string `json:"uid"`
 	jwt.RegisteredClaims
 }
 
+func (c Claims) GetExpirationTime() (*jwt.NumericDate, error) {
+	return c.RegisteredClaims.GetExpirationTime()
+}
+func (c Claims) GetIssuedAt() (*jwt.NumericDate, error) {
+	return c.RegisteredClaims.GetIssuedAt()
+}
+func (c Claims) GetNotBefore() (*jwt.NumericDate, error) {
+	return c.RegisteredClaims.GetNotBefore()
+}
+func (c Claims) GetIssuer() (string, error) {
+	return c.RegisteredClaims.GetIssuer()
+}
+func (c Claims) GetSubject() (string, error) {
+	return c.RegisteredClaims.GetSubject()
+}
+func (c Claims) GetAudience() (jwt.ClaimStrings, error) {
+	return c.RegisteredClaims.GetAudience()
+}
+
 var jwtKey = []byte(os.Getenv("JWT_SECRET"))
-var tokens []string
 
 var eventDateTimeValidatorFunc validator.Func = func(fl validator.FieldLevel) bool {
 	date, ok := fl.Field().Interface().(string)
@@ -144,7 +166,7 @@ func maintenanceModeMiddleware(g *gin.Engine) *gin.Engine {
 		mm := os.Getenv("MAINTENANCE_MODE")
 		atoi, err := strconv.ParseBool(mm)
 		if err != nil || atoi {
-			err := errors.New("Server is under maintenance")
+			err := errors.New("server is under maintenance")
 			log.Println(err.Error())
 			ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, err.Error())
 			return
@@ -161,29 +183,7 @@ func apiv1Group(g *gin.Engine) *gin.RouterGroup {
 func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 	apiv1 := apiv1Group(g)
 	guest := apiv1.Group("/auth")
-	guest.Use(func(ctx *gin.Context) {
-		origin := ctx.Request.Header.Get("origin")
-		log.Printf("[origin]: %s\n", origin)
-		secret := ctx.Request.Header.Get("x-secret")
-		realSecret := os.Getenv("API_SECRET")
-		log.Printf("[secret]: %s %s\n", secret, realSecret)
-		if secret != realSecret {
-			ctx.AbortWithStatus(http.StatusForbidden)
-			return
-		}
-		appHost := os.Getenv("APP_HOST")
-		match, _ := regexp.MatchString(appHost, origin)
-		if match {
-			return
-		}
-		log.Printf("Origin matches host: %v %s\n", match, origin)
-		match, _ = regexp.MatchString(`app:mobile`, origin)
-		if match {
-			return
-		}
-		log.Printf("Origin matches mobile: %v %s\n", match, origin)
-		ctx.AbortWithStatus(http.StatusNotFound)
-	})
+	guest.Use(middlewares.VerifyIdToken)
 	guest.
 		POST("/login", func(ctx *gin.Context) {
 			var body types.RegisterUserRequestBody
@@ -235,8 +235,8 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 			}
 
 			token, _ := generateJWT(user.Email, muser.ID, muser.ActiveOrg)
-			tokens = append(tokens, token)
 
+			uid := ctx.GetString("uid")
 			go func() {
 				rd := lib.GetRedisClient()
 				_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:user", muser.ID), "$", &muser).Result()
@@ -247,6 +247,9 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 				if err != nil {
 					log.Printf("[redis] Error updating user cache: %s\n", err.Error())
 				}
+				token := rd.JSONGet(context.Background(), fmt.Sprintf("%s:fcm", uid), "$.token").Val()
+				fcm, _ := lib.GetFirebaseMessaging()
+				fcm.SubscribeToTopic(ctx.Copy(), []string{token}, "Notifications")
 			}()
 
 			ctx.JSON(http.StatusOK, gin.H{
@@ -273,7 +276,7 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 			db := db.GetDb()
 			var muser models.User
 			err = db.Transaction(func(tx *gorm.DB) error {
-				err := db.
+				err := tx.
 					Model(&models.User{}).
 					Select("id").
 					Where(&models.User{Email: user.Email}).
@@ -293,7 +296,7 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 					Role:  types.ROLE_OWNER,
 					Name:  user.DisplayName,
 				}
-				err = db.Create(&newUser).Error
+				err = tx.Create(&newUser).Error
 				if err != nil {
 					return err
 				}
@@ -304,8 +307,9 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 					Type:         types.ORG_PERSONAL,
 					ContactEmail: user.Email,
 					TenantID:     newUser.TenantID,
+					Status:       "active",
 				}
-				err = db.Create(&newOrg).Error
+				err = tx.Create(&newOrg).Error
 				if err != nil {
 					return err
 				}
@@ -316,12 +320,46 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 					Name:           "Default",
 					Status:         "active",
 				}
-				err = db.Create(&newTeam).Error
+				err = tx.Create(&newTeam).Error
 				if err != nil {
 					return err
 				}
+				sc := lib.GetStripeClient()
+				acc, err := sc.V1Accounts.Create(context.Background(), &stripe.AccountCreateParams{
+					BusinessProfile: &stripe.AccountCreateBusinessProfileParams{
+						Name:         stripe.String(newOrg.Name),
+						SupportEmail: stripe.String(newOrg.ContactEmail),
+					},
+					BusinessType: stripe.String("individual"),
+					Company: &stripe.AccountCreateCompanyParams{
+						Name: stripe.String(newOrg.Name),
+					},
+					Type:     stripe.String("express"),
+					Email:    stripe.String(newOrg.ContactEmail),
+					Metadata: map[string]string{"organizationId": fmt.Sprintf("%d", newOrg.ID)},
+					Capabilities: &stripe.AccountCreateCapabilitiesParams{
+						CardPayments: &stripe.AccountCreateCapabilitiesCardPaymentsParams{
+							Requested: stripe.Bool(true),
+						},
+						Transfers: &stripe.AccountCreateCapabilitiesTransfersParams{
+							Requested: stripe.Bool(true),
+						},
+					},
+				})
+				if err != nil {
+					log.Printf("Error creating account for organization: %s\n", err.Error())
+					return errors.New("error creating account for organization")
+				}
+				if err := tx.
+					Model(&models.Organization{}).
+					Where("id = ?", newOrg.ID).
+					Updates(&models.Organization{
+						StripeAccountID: &acc.ID,
+					}).Error; err != nil {
+					log.Printf("Error creating Connect account: %s\n", err.Error())
+				}
 
-				err = db.
+				err = tx.
 					Model(&models.User{}).
 					Where(&models.User{ID: newUser.ID}).
 					Update("active_org", newOrg.ID).Error
@@ -340,13 +378,66 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 	return guest
 }
 
+func setupSocketServer(r *gin.Engine) *socket.Server {
+	c := socket.DefaultServerOptions()
+	c.SetServeClient(true)
+	c.SetPingInterval(time.Second)
+	c.SetPingTimeout(200 * time.Millisecond)
+	c.SetMaxHttpBufferSize(1_000_000)
+	c.SetConnectTimeout(time.Second)
+	// c.SetTransports(engineiotypes.NewSet("polling", "websocket"))
+	c.SetCors(&engineiotypes.Cors{
+		Origin:      "*",
+		Credentials: true,
+	})
+
+	wss := socket.NewServer(nil, nil)
+	wss.On("connection", func(clients ...any) {
+		client := clients[0].(*socket.Socket)
+		fmt.Println("[newclient]: ", string(client.Id()), client.Nsp().Name())
+		client.On("message", func(args ...any) {
+			client.Emit("message-back", args...)
+		})
+		// client.Emit("auth", client.Handshake().Auth)
+		client.On("message-with-ack", func(args ...any) {
+			ack := args[len(args)-1].(socket.Ack)
+			ack(args[:len(args)-1], nil)
+		})
+		client.On("event", func(data ...any) {
+			log.Printf("Event for client [%s]: %v\n", string(client.Id()), data)
+		})
+	})
+	wss.Of("/sub", nil).On("connection", func(clients ...any) {
+		client := clients[0].(*socket.Socket)
+		fmt.Println("[newclient]: ", string(client.Id()), client.Nsp().Name())
+		// client.Emit("auth", client.Handshake().Auth)
+		client.On("test", func(data ...any) {
+			log.Printf("received test from client %s with data %v\n", string(client.Id()), data)
+			client.EmitWithAck("test", "pong")(func(args []any, err error) {
+				log.Fatal(args, err)
+			})
+		})
+	})
+	wss.Emit("test", "ping")
+
+	r.GET("/socket.io/*any", gin.WrapH(wss.ServeHandler(c)))
+	r.POST("/socket.io/*any", gin.WrapH(wss.ServeHandler(c)))
+	return wss
+}
+
 func main() {
+	boot.InitDb()
+
 	go boot.DownloadSDKFileFromS3()
-	go boot.InitDb()
+	go lib.StripeInitialize()
+	// go boot.InitScheduler()
 	go boot.InitBroker()
-	go boot.InitScheduler()
 
 	router := setupRouter()
+	wss := setupSocketServer(router)
+	if wss != nil {
+		log.Println("WS server listening for connections...")
+	}
 
 	appEnv := os.Getenv("APP_ENV")
 	appHost := os.Getenv("APP_HOST")
@@ -367,10 +458,7 @@ func main() {
 				return true
 			}
 			match, _ = regexp.MatchString("app:mobile", origin)
-			if match {
-				return true
-			}
-			return false
+			return match
 		}
 		cc.AllowCredentials = true
 		cc.AllowAllOrigins = false
@@ -393,6 +481,69 @@ func main() {
 	authorized := router.Group("/api/v1")
 	authorized.Use(middlewares.AuthMiddleware)
 	{
+
+		authorized.
+			POST("/fcm", func(ctx *gin.Context) {
+				var body struct {
+					Token  string   `json:"token" binding:"required"`
+					Topics []string `json:"topics" binding:"required"`
+				}
+				if err := ctx.ShouldBindJSON(&body); err != nil {
+					log.Printf("[FCM] error: %v\n", err)
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				fcm, err := lib.GetFirebaseMessaging()
+				if err != nil {
+					log.Printf("Could not retrieve FCM instance: %v\n", err)
+					ctx.Status(http.StatusInternalServerError)
+					return
+				}
+				for _, topic := range body.Topics {
+					_, err := fcm.SubscribeToTopic(ctx, []string{body.Token}, topic)
+					if err != nil {
+						log.Printf("[FCM] error subscribing to topic [%s]: %v\n", topic, err)
+						ctx.Status(http.StatusBadRequest)
+						return
+					}
+				}
+				uid := ctx.GetString("uid")
+				rd := lib.GetRedisClient()
+				rd.JSONSet(context.Background(), fmt.Sprintf("%s:fcm", uid), "$", map[string]any{
+					"token":  body.Token,
+					"topics": body.Topics,
+				})
+
+				ctx.Status(http.StatusOK)
+			}).
+			POST("/fcm/send", func(ctx *gin.Context) {
+				var body struct {
+					Topic string `json:"topic" binding:"required"`
+				}
+				if err := ctx.ShouldBindJSON(&body); err != nil {
+					log.Printf("[FCM] error: %s\n", err.Error())
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				fcm, err := lib.GetFirebaseMessaging()
+				if err != nil {
+					log.Printf("Could not retrieve FCM instance: %v\n", err)
+					ctx.Status(http.StatusInternalServerError)
+					return
+				}
+				res, err := fcm.Send(context.Background(), &messaging.Message{
+					Data: map[string]string{
+						"test": "abc",
+					},
+					Topic: body.Topic,
+				})
+				if err != nil {
+					log.Fatalln(err)
+				}
+				log.Println("successfully sent message:", res)
+				ctx.Status(http.StatusOK)
+			})
+
 		authorized.
 			POST("/auth/logout", func(ctx *gin.Context) {
 				db := db.GetDb()
@@ -408,6 +559,15 @@ func main() {
 					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
+				uid := ctx.GetString("uid")
+
+				go func() {
+					rd := lib.GetRedisClient()
+					token := rd.JSONGet(context.Background(), fmt.Sprintf("%s:fcm", uid), "$.token").Val()
+					fcm, _ := lib.GetFirebaseMessaging()
+					fcm.SubscribeToTopic(ctx.Copy(), []string{token}, "Notifications")
+				}()
+
 				ctx.Status(http.StatusOK)
 			})
 
@@ -435,7 +595,6 @@ func main() {
 				userId := ctx.GetUint("id")
 				cacheKey := fmt.Sprintf("%d:user", userId)
 				res := rd.JSONGet(context.Background(), cacheKey).Val()
-				log.Printf("content: %s\n", res)
 				if res == "" {
 					log.Printf("content not found [%s]\n", cacheKey)
 					auth, err := lib.GetFirebaseAuth()
@@ -522,7 +681,7 @@ func main() {
 				err = db.Transaction(func(tx *gorm.DB) error {
 					setting := models.Setting{
 						SettingKey:   body.Key,
-						SettingValue: types.JSONBAny{Inner: body.Value},
+						SettingValue: body.Value,
 						Group:        body.Group,
 					}
 					err := tx.Create(&setting).Error
@@ -570,8 +729,8 @@ func main() {
 					accLink, err := sc.V1AccountLinks.Create(context.Background(), &stripe.AccountLinkCreateParams{
 						Account:    stripe.String(acc.ID),
 						Type:       stripe.String("account_onboarding"),
-						ReturnURL:  stripe.String(""),
-						RefreshURL: stripe.String(""),
+						ReturnURL:  stripe.String(fmt.Sprint(os.Getenv("APP_HOST"), "/dashboard")),
+						RefreshURL: stripe.String(fmt.Sprint(os.Getenv("APP_HOST"), "/callback/account/refresh")),
 					})
 					if err != nil {
 						return err
@@ -636,7 +795,8 @@ func main() {
 				encryptedText := gcm.Seal(nonce, nonce, plainTextBytes, nil)
 
 				ctx.JSON(http.StatusOK, gin.H{"encrypted_text": encryptedText})
-			})
+			}).
+			GET("/jwt", func(ctx *gin.Context) {})
 	}
 
 	if err := router.Run(":9090"); err != nil {

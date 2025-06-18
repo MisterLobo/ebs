@@ -26,11 +26,11 @@ type JobTask struct {
 	Topic         string      `json:"-"`
 }
 
-func (self *JobTask) CreateAndEnqueueJobTask(jobTask JobTask) (string, error) {
+func (j *JobTask) CreateAndEnqueueJobTask(jobTask JobTask) (string, error) {
 	var jobID string
 	db := db.GetDb()
 	err := db.Transaction(func(tx *gorm.DB) error {
-		eventId := jobTask.HandlerParams[0]
+		id := jobTask.HandlerParams[0]
 		clientId := jobTask.Payload["producerClientId"].(string)
 		params := map[string]string{
 			"name":     jobTask.Name,
@@ -39,7 +39,7 @@ func (self *JobTask) CreateAndEnqueueJobTask(jobTask JobTask) (string, error) {
 		}
 		sid, err := lib.NewScheduledJob(jobTask.RunsAt, params, jobTask.Payload)
 		if err != nil {
-			log.Printf("Error creating job for Event: id=%d error=%s\n", eventId, err.Error())
+			log.Printf("Error creating job for %s: id=%d error=%s\n", jobTask.Source, id, err.Error())
 			return err
 		}
 		jobID = sid.String()

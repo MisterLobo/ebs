@@ -46,8 +46,10 @@ export function NavUser({
   const router = useRouter()
   const { isMobile } = useSidebar()
   const logOut = useCallback(async () => {
-    await logout()
-    router.push('/login')
+    const shouldRedirect = await logout()
+    if (shouldRedirect) {
+      router.push('/login')
+    }
   }, [])
 
   return (

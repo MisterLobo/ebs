@@ -156,7 +156,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				}
 				now := time.Now()
 				if now.After(*reservation.Booking.Event.DateTime) {
-					err := errors.New("Ticket is no longer valid")
+					err := errors.New("ticket is no longer valid")
 					log.Printf("Error: %s\n", err.Error())
 					return err
 				}
@@ -227,7 +227,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				First(&ticket).
 				Error; err != nil {
 				log.Printf("Error retrieving Ticket [%d]: %s\n", ticketId, err.Error())
-				if errors.Is(gorm.ErrRecordNotFound, err) {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					ctx.Status(http.StatusNotFound)
 					return
 				}
@@ -265,7 +265,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				First(&ticket).
 				Error; err != nil {
 				log.Printf("Error retrieving Ticket [%d]: %s\n", ticketId, err.Error())
-				if errors.Is(gorm.ErrRecordNotFound, err) {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					ctx.Status(http.StatusNotFound)
 					return
 				}
@@ -296,6 +296,10 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			}
 			ticketId := uint(atoi)
 			free, reserved, err := utils.GetTicketSeats(ticketId)
+			if err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
 			ctx.JSON(http.StatusOK, gin.H{"id": ticketId, "free": free, "reserved": reserved})
 		}).
 		PATCH("/tickets/:id/publish", func(ctx *gin.Context) {
@@ -308,7 +312,7 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			ticketId := uint(atoi)
 			ticket, err := utils.GetTicket(ticketId)
 			if ticket.Event.Status != types.EVENT_OPEN && (ticket.Event.Status != types.EVENT_REGISTRATION && ticket.Event.Mode != "scheduled") {
-				err := errors.New("Event must be either published or in scheduled mode")
+				err := errors.New("event must be either published or in scheduled mode")
 				log.Printf("Error publishing ticket: %s\n", err.Error())
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
@@ -334,12 +338,10 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				return
 			}
 			ticketId := uint(atoi)
-			var ticket models.Ticket
-			db := db.GetDb()
-			db.Model(&models.Ticket{}).Where(&models.Ticket{ID: ticketId, Status: "open"}).Find(&ticket)
-			if ticket.ID < 1 {
-				err := errors.New("Ticket not found")
-				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			ticket, err := utils.GetTicket(ticketId)
+			if err != nil {
+				log.Printf("Error retrieving ticket [%d]: %s\n", ticketId, err.Error())
+				ctx.Status(http.StatusNotFound)
 				return
 			}
 			err = utils.CloseTicket(ticketId)
@@ -350,27 +352,24 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			ctx.JSON(http.StatusOK, gin.H{"data": ticket})
 		}).
 		DELETE("/tickets/:id", func(ctx *gin.Context) {
-			id := ctx.Params.ByName("id")
-			atoi, err := strconv.Atoi(id)
+			var params types.SimpleRequestParams
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			ticketId := params.ID
+			_, err := utils.GetTicket(ticketId)
+			if err != nil {
+				log.Printf("Error retrieving ticket [%d]: %s\n", ticketId, err.Error())
+				ctx.Status(http.StatusNotFound)
+				return
+			}
+			err = utils.DeleteTicket(ticketId)
 			if err != nil {
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			ticketId := uint(atoi)
-			var ticket models.Ticket
-			db := db.GetDb()
-			db.Model(&models.Ticket{}).Where(&models.Ticket{ID: ticketId}).Find(&ticket)
-			if ticket.ID < 1 {
-				err := errors.New("Ticket not found")
-				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			err = utils.CloseTicket(ticketId)
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			ctx.JSON(http.StatusOK, gin.H{"data": ticket})
+			ctx.Status(http.StatusNoContent)
 		})
 	return g
 }

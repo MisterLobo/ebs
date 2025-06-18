@@ -1,7 +1,7 @@
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { getActiveOrganization, getEventById, getTickets, organizationOnboarding } from '@/lib/actions'
+import { getActiveOrganization, getOrgEventById, getTickets, organizationOnboarding } from '@/lib/actions'
 import { EventPageHeaderActions } from './components/actions'
 import { importURLPatternPolyfill } from '@/lib/utils'
 import { headers } from 'next/headers'
@@ -21,11 +21,11 @@ export default async function EventPage() {
   const id = result?.pathname.groups.id ?? '0'
   const eventId = parseInt(id)
   
-  const eventData = await getEventById(eventId)
+  const org = await getActiveOrganization()
+  const eventData = await getOrgEventById(org?.id as number, eventId)
   if (!eventData) {
     throw notFound()
   }
-  const org = await getActiveOrganization()
   const { completed } = await organizationOnboarding(org?.id as number)
   const ticketsData = await getTickets(eventId, org?.id)
 

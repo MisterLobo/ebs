@@ -9,6 +9,7 @@ import (
 	"ebs/src/types"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -21,12 +22,12 @@ import (
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 	apiv1 := apiv1Group(g)
 	apiv1.POST("/webhook/stripe", func(ctx *gin.Context) {
-		payload := make([]byte, 65536)
 		payload, err := io.ReadAll(ctx.Request.Body)
 		if err != nil {
 			log.Printf("Error reading request body: %s\n", err.Error())
@@ -65,7 +66,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					Find(&user).
 					Error; err != nil {
 					log.Printf("Error while retrieving user info for Customer %s: %s\n", cus.ID, err.Error())
-					return errors.New("Could not retrieve user information")
+					return errors.New("could not retrieve user information")
 				}
 
 				if err := tx.
@@ -81,8 +82,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 			if err != nil {
 				log.Printf("Error updating user %d: %s\n", userId, err.Error())
 			}
-			break
-		case "subscription.created":
+		case "customer.subscription.created":
 			var sub stripe.Subscription
 			err := json.Unmarshal(event.Data.Raw, &sub)
 			if err != nil {
@@ -105,7 +105,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					Find(&user).
 					Error; err != nil {
 					log.Printf("Error while retrieving user info for Subscription %s: %s\n", sub.ID, err.Error())
-					return errors.New("Could not retrieve user information")
+					return errors.New("could not retrieve user information")
 				}
 
 				if err := tx.
@@ -121,7 +121,6 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 			if err != nil {
 				log.Printf("Error updating user %d: %s\n", userId, err.Error())
 			}
-			break
 		case "account.updated":
 			var acc stripe.Account
 			err := json.Unmarshal(event.Data.Raw, &acc)
@@ -129,7 +128,33 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 				log.Printf("[Stripe] Error parsing Account: %s\n", err.Error())
 				break
 			}
-			break
+			md := acc.Metadata
+			organizationId := md["organizationId"]
+			orgId, err := strconv.Atoi(organizationId)
+			if err != nil {
+				log.Printf("Error reading property organizationId from Metadata: %s\n", err.Error())
+				return
+			}
+			completed := len(acc.Requirements.Errors) == 0 &&
+				acc.ChargesEnabled &&
+				acc.PayoutsEnabled &&
+				acc.DetailsSubmitted
+			if completed {
+				db := db.GetDb()
+				db.Transaction(func(tx *gorm.DB) error {
+					if err := tx.
+						Model(&models.Organization{}).
+						Where("id = ?", orgId).
+						Updates(&models.Organization{
+							Verified:        completed,
+							PaymentVerified: acc.ChargesEnabled,
+						}).
+						Error; err != nil {
+						return err
+					}
+					return nil
+				})
+			}
 		case "capability.updated":
 			var cap stripe.Capability
 			err := json.Unmarshal(event.Data.Raw, &cap)
@@ -137,7 +162,86 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 				log.Printf("[Stripe] Error parsing Capability: %s\n", err.Error())
 				break
 			}
-			break
+		case "invoice.paid":
+			var inv stripe.Invoice
+			if err := json.Unmarshal(event.Data.Raw, &inv); err != nil {
+				log.Printf("[Stripe] Error parsing Invoice: %s\n", err.Error())
+				break
+			}
+			md := inv.Metadata
+			requestId := md["requestId"]
+			go func() {
+				var bookings []models.Booking
+				var txn models.Transaction
+				db := db.GetDb()
+				if err := db.Transaction(func(tx *gorm.DB) error {
+					err := tx.
+						Model(&models.Transaction{}).
+						Where("reference_id = ?", requestId).
+						First(&txn).
+						Error
+					if err != nil {
+						return err
+					}
+					txnId := txn.ID
+					if err := tx.
+						Model(&models.Booking{}).
+						Preload("User").
+						Where("transaction_id = ?", txnId).
+						Select("event_id", "user_id").
+						Find(&bookings).
+						Error; err != nil {
+						log.Printf("Could not retrieve Event IDs for selected Booking: %s\n", err.Error())
+						return err
+					}
+					user := bookings[0].User
+					fcm, _ := lib.GetFirebaseMessaging()
+					rd := lib.GetRedisClient()
+					token := rd.JSONGet(context.Background(), fmt.Sprintf("%s:fcm", user.UID), "$.token").Val()
+					log.Printf("[%d] retrieved token from cache: %s", user.ID, token)
+					for _, b := range bookings {
+						topic := fmt.Sprintf("EventsToOpen_%d", b.EventID)
+						sub, err := fcm.SubscribeToTopic(context.Background(), []string{token}, topic)
+						if err != nil {
+							log.Printf("Error subscribing to topic %s: %s\n", topic, err.Error())
+						} else {
+							log.Printf("Added topic %s to subscription: %d\n", topic, sub.SuccessCount)
+						}
+					}
+
+					err = tx.
+						Model(&models.Booking{}).
+						Where(&models.Booking{TransactionID: &txnId}).
+						Updates(&models.Booking{
+							Status: types.BOOKING_COMPLETED,
+						}).
+						Error
+					if err != nil {
+						log.Printf("Error updating Booking group [%s]: %s\n", requestId, err.Error())
+						return err
+					}
+					if err := tx.
+						Model(&models.Transaction{}).
+						Where("reference_id", requestId).
+						Where(clause.IN{Column: "status", Values: []any{
+							types.TRANSACTION_PENDING,
+							types.TRANSACTION_PROCESSING,
+						}}).
+						Updates(&models.Transaction{
+							Amount:     float64(inv.Subtotal),
+							AmountPaid: float64(inv.Total),
+							Currency:   string(inv.Currency),
+							Status:     types.TRANSACTION_COMPLETED,
+						}).
+						Error; err != nil {
+						return err
+					}
+					log.Printf("[invoice.paid] Transaction with request ID [%s] has completed successfully!\n", requestId)
+					return nil
+				}); err != nil {
+					log.Printf("Transaction failed: %s\n", err.Error())
+				}
+			}()
 		case "payment_intent.created":
 			var pi stripe.PaymentIntent
 			err := json.Unmarshal(event.Data.Raw, &pi)
@@ -178,12 +282,16 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					qurl, err := cli.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{
 						QueueName: aws.String("PaymentTransactionUpdates"),
 					})
+					if err != nil {
+						log.Printf("Error retrieving queue URL: %s\n", err.Error())
+						return err
+					}
 					bUpdates, _ := json.Marshal(&models.Transaction{
 						SourceName:  "PaymentIntent",
 						SourceValue: pi.ID,
 						Status:      types.TRANSACTION_PROCESSING,
-						Amount:      float64(pi.Amount),
-						Currency:    string(pi.Currency),
+						// Amount:      float64(pi.Amount),
+						Currency: string(pi.Currency),
 					})
 					updates := string(bUpdates)
 					bConds, _ := json.Marshal(&models.Transaction{
@@ -227,7 +335,6 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					return
 				}
 			}()
-			break
 		case "payment_intent.succeeded":
 			var pi stripe.PaymentIntent
 			err := json.Unmarshal(event.Data.Raw, &pi)
@@ -286,49 +393,66 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 							return err
 						}
 					}
-					cli := lib.AWSGetSQSClient()
-					qurl, err := cli.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{
-						QueueName: aws.String("PaymentTransactionUpdates"),
-					})
-					bUpdates, _ := json.Marshal(models.Transaction{
+					appEnv := os.Getenv("APP_ENV")
+					txnUpdates := &models.Transaction{
 						SourceName:  "PaymentIntent",
 						SourceValue: pi.ID,
-						Status:      types.TRANSACTION_COMPLETED,
-						Amount:      float64(pi.Amount),
-						Currency:    string(pi.Currency),
-					})
-					updates := string(bUpdates)
-					bConds, _ := json.Marshal(&models.Transaction{
+						Status:      types.TRANSACTION_PROCESSING,
+						// Amount:      float64(pi.Amount),
+						// AmountPaid:  float64(pi.AmountReceived),
+						Currency:        string(pi.Currency),
+						PaymentIntentId: &pi.ID,
+					}
+					txnConds := &models.Transaction{
 						ID:     txn.ID,
-						Status: types.TRANSACTION_PROCESSING,
-					})
+						Status: types.TRANSACTION_PENDING,
+					}
+					bUpdates, _ := json.Marshal(txnUpdates)
+					updates := string(bUpdates)
+					bConds, _ := json.Marshal(txnConds)
 					conds := string(bConds)
-					bPayload, _ := json.Marshal(&map[string]any{
+					txnPayload := &map[string]any{
 						"source":  "payment_intent.succeeded",
 						"id":      txn.ID.String(),
 						"conds":   conds,
 						"updates": updates,
-					})
+					}
+					bPayload, _ := json.Marshal(txnPayload)
 					sPayload := string(bPayload)
-					out, err := cli.SendMessage(context.Background(), &sqs.SendMessageInput{
-						QueueUrl:     qurl.QueueUrl,
-						MessageBody:  aws.String(sPayload),
-						DelaySeconds: 10,
-					})
-					if err != nil {
-						log.Printf("Could not send message to queue: %s\n", err.Error())
+					if appEnv == "test" || appEnv == "prod" {
+						cli := lib.AWSGetSQSClient()
+						qurl, err := cli.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{
+							QueueName: aws.String("PaymentTransactionUpdates"),
+						})
+						if err != nil {
+							log.Printf("Error retrieving queue URL: %s\n", err.Error())
+							return err
+						}
+						out, err := cli.SendMessage(context.Background(), &sqs.SendMessageInput{
+							QueueUrl:     qurl.QueueUrl,
+							MessageBody:  aws.String(sPayload),
+							DelaySeconds: 10,
+						})
+						if err != nil {
+							log.Printf("Could not send message to queue: %s\n", err.Error())
+							return err
+						}
+						log.Printf("Message sent to queue: %s\n", *out.MessageId)
+						return nil
+					}
+					if err := lib.KafkaProduceMessage(
+						"PaymentTransactionUpdatesProducer",
+						"PaymentTransactionUpdates",
+						&types.JSONB{
+							"source":  "payment_intent.succeeded",
+							"id":      txn.ID.String(),
+							"updates": txnUpdates,
+							"conds":   txnConds,
+						},
+					); err != nil {
+						log.Printf("Error sending message to queue: %s\n", err.Error())
 						return err
 					}
-					log.Printf("Message sent to queue: %s\n", *out.MessageId)
-					/* err = tx.
-						Where(&models.Transaction{ReferenceID: requestId, Status: types.TRANSACTION_PROCESSING}).
-						Updates(&models.Transaction{
-							Status: types.TRANSACTION_COMPLETED,
-						}).
-						Error
-					if err != nil {
-						return err
-					} */
 					return nil
 				})
 				if err != nil {
@@ -336,7 +460,6 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					return
 				}
 			}()
-			break
 		case "checkout.session.completed":
 			var cs stripe.CheckoutSession
 			err := json.Unmarshal(event.Data.Raw, &cs)
@@ -361,6 +484,19 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					if err != nil {
 						return err
 					}
+					if len(cs.Discounts) > 0 {
+						discount := cs.Discounts[0]
+						promo := discount.PromotionCode
+						if err := tx.
+							Model(&models.Transaction{}).
+							Where("reference_id = ?", requestId).
+							Updates(&models.Transaction{
+								PromoId: &promo.ID,
+							}).
+							Error; err != nil {
+							return err
+						}
+					}
 					return nil
 				})
 				if err != nil {
@@ -368,7 +504,6 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					return
 				}
 			}()
-			break
 		}
 		ctx.Status(http.StatusNoContent)
 	})
@@ -388,7 +523,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 				Select("StripeAccountId").
 				Scan(&user).
 				Error; err != nil {
-				if errors.Is(gorm.ErrRecordNotFound, err) {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					ctx.Status(http.StatusNotFound)
 					return
 				}
@@ -409,7 +544,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 				Select("StripeCustomerId").
 				Scan(&user).
 				Error; err != nil {
-				if errors.Is(gorm.ErrRecordNotFound, err) {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					ctx.Status(http.StatusNotFound)
 					return
 				}
@@ -430,7 +565,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 				Select("StripeSubscriptionId").
 				Scan(&user).
 				Error; err != nil {
-				if errors.Is(gorm.ErrRecordNotFound, err) {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					ctx.Status(http.StatusNotFound)
 					return
 				}
@@ -451,7 +586,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 				Select("StripeCustomerId").
 				Scan(&user).
 				Error; err != nil {
-				if errors.Is(gorm.ErrRecordNotFound, err) {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					ctx.Status(http.StatusNotFound)
 					return
 				}

@@ -23,6 +23,7 @@ type Booking struct {
 	SlotsWanted       uint                `json:"slots_wanted"`
 	SlotsTaken        uint                `json:"slots_taken"`
 	TenantID          *uuid.UUID          `gorm:"type:uuid" json:"-"`
+	Identifier        *string             `gorm:"<-:create" json:"resource_id"`
 
 	Event        *Event         `gorm:"foreignKey:event_id" json:"event,omitempty"`
 	User         *User          `gorm:"foreignKey:user_id" json:"user,omitempty"`

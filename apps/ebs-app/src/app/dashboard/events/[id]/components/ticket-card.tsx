@@ -3,12 +3,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import LoadingButton from '@/components/ui/loading-button'
-import { publishTicket } from '@/lib/actions'
+import { archiveTicket, closeTicket, publishTicket } from '@/lib/actions'
 import { Ticket } from '@/lib/types'
 import { Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useState } from 'react'
+import { toast } from 'sonner'
 
 type Props = {
   ticket: Ticket,
@@ -20,7 +21,9 @@ export default function TicketCard({ ticket }: Props) {
     setBusy(true)
     const error = await publishTicket(ticket.id)
     if (error) {
-      alert(error)
+      toast('ERROR', {
+        description: error,
+      })
       return
     }
     setBusy(false)
@@ -28,10 +31,25 @@ export default function TicketCard({ ticket }: Props) {
   }, [ticket])
   const onClickDelete = useCallback(async () => {
     setBusy(true)
-    // setBusy(false)
+    const error = await archiveTicket(ticket.id)
+    if (error) {
+      toast('ERROR', {
+        description: error,
+      })
+      return
+    }
   }, [])
   const onClickClose = useCallback(async () => {
     setBusy(true)
+    const error = await closeTicket(ticket.id)
+    if (error) {
+      toast('ERROR', {
+        description: error,
+      })
+      return
+    }
+    setBusy(false)
+    router.refresh()
   }, [])
   return (
     <Card className="m-4 w-96 relative" key={ticket.id}>

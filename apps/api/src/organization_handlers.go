@@ -21,6 +21,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/account"
+	"github.com/stripe/stripe-go/v82/accountlink"
 	"github.com/tidwall/gjson"
 	"gorm.io/gorm"
 )
@@ -156,7 +158,7 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				Omit("ConnectOnboardingURL", "StripeAccountID", "OwnerID").
 				First(&org).
 				Error; err != nil {
-				if errors.Is(gorm.ErrRecordNotFound, err) {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					ctx.Status(http.StatusNotFound)
 					return
 				}
@@ -197,8 +199,8 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			if org.Type != types.ORG_STANDARD {
-				err := errors.New("Switching to a non-Standard organization type is not allowed")
+			if org.Type != types.ORG_STANDARD && org.Type != types.ORG_PERSONAL {
+				err := errors.New("switching to a non-Standard organization type is not allowed")
 				log.Printf("Error switching to organization: %s\n", err.Error())
 				ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 				return
@@ -222,35 +224,43 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			}
 			sc := lib.GetStripeClient()
 			accountId := org.StripeAccountID
-			if accountId == nil {
+			/* if accountId == nil {
 				log.Printf("Error while retrieving account information for Organization [%d]: account is not set up\n", orgId)
 				ctx.JSON(http.StatusNotFound, gin.H{"error": "Account not found"})
 				return
-			}
-			accId := *accountId
-			log.Println("AccountID:", org.ID, accId)
-			stripeAccount, err := sc.V1Accounts.GetByID(context.Background(), accId, nil)
-			if err != nil {
-				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			completed := stripeAccount != nil && len(stripeAccount.Requirements.Errors) == 0 &&
-				stripeAccount.ChargesEnabled &&
-				stripeAccount.PayoutsEnabled &&
-				stripeAccount.DetailsSubmitted
-
+			} */
 			onboarding_status := "incomplete"
-			if completed {
-				onboarding_status = "complete"
-			}
 			onboardingStatus := map[string]any{
 				"url":              org.ConnectOnboardingURL,
-				"accountId":        stripeAccount.ID,
+				"accountId":        nil,
 				"status":           onboarding_status,
-				"errors":           stripeAccount.Requirements.Errors,
-				"chargesEnabled":   stripeAccount.ChargesEnabled,
-				"payoutsEnabled":   stripeAccount.PayoutsEnabled,
-				"detailsSubmitted": stripeAccount.DetailsSubmitted,
+				"errors":           []*stripe.AccountRequirementsError{},
+				"chargesEnabled":   false,
+				"payoutsEnabled":   false,
+				"detailsSubmitted": false,
+			}
+			if accountId != nil {
+				log.Println("AccountID:", org.ID, *accountId)
+				stripeAccount, err := sc.V1Accounts.GetByID(context.Background(), *accountId, nil)
+				if err != nil {
+					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+					return
+				}
+
+				completed := stripeAccount != nil && len(stripeAccount.Requirements.Errors) == 0 &&
+					stripeAccount.ChargesEnabled &&
+					stripeAccount.PayoutsEnabled &&
+					stripeAccount.DetailsSubmitted
+
+				if completed {
+					onboarding_status = "complete"
+				}
+				onboardingStatus["accountId"] = stripeAccount.ID
+				onboardingStatus["status"] = onboarding_status
+				onboardingStatus["errors"] = stripeAccount.Requirements.Errors
+				onboardingStatus["chargesEnabled"] = stripeAccount.ChargesEnabled
+				onboardingStatus["payoutsEnabled"] = stripeAccount.PayoutsEnabled
+				onboardingStatus["detailsSubmitted"] = stripeAccount.DetailsSubmitted
 			}
 			jbytes, _ := json.Marshal(&onboardingStatus)
 			value := string(jbytes)
@@ -260,9 +270,10 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
+			rd.JSONSet(context.Background(), fmt.Sprintf("%d:active", userId), "$", org)
 			rd.Expire(context.Background(), key, time.Hour)
 			appEnv := os.Getenv("APP_ENV")
-			secure := appEnv == "prod"
+			secure := appEnv != "local"
 			ctx.SetCookie("token", tokenCookie, 3600, "/", os.Getenv("APP_HOST"), secure, true)
 			ctx.JSON(http.StatusOK, gin.H{"access_token": tokenCookie})
 		}).
@@ -279,7 +290,7 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			log.Printf("claims: %v\n", claims)
 			allowed := slices.IndexFunc(claims, func(c string) bool { return c == "reservations:list" || c == "reservations*" || c == "*" }) > -1
 			if !allowed {
-				err := errors.New("Not enough permissions to perform this action")
+				err := errors.New("not enough permissions to perform this action")
 				ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 				return
 			}
@@ -380,8 +391,8 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			db := db.GetDb()
 			if query.Public {
 				if err := db.Where(&models.Organization{ID: orgId}).First(&organization).Error; err != nil {
-					log.Printf("Error retrieving Organization [%d]: %s\n", orgId, err.Error())
-					if errors.Is(gorm.ErrRecordNotFound, err) {
+					log.Printf("error retrieving Organization [%d]: %s\n", orgId, err.Error())
+					if errors.Is(err, gorm.ErrRecordNotFound) {
 						ctx.Status(http.StatusNotFound)
 						return
 					}
@@ -414,8 +425,8 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				Where(&models.Organization{ID: orgId, OwnerID: userId}).
 				Find(&organization).
 				Error; err != nil {
-				if errors.Is(gorm.ErrRecordNotFound, err) {
-					err := errors.New("Organization not found")
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					err := errors.New("organization not found")
 					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return
 				}
@@ -423,7 +434,7 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 
 			activeOrgId := ctx.GetUint("org")
 			if activeOrgId != orgId {
-				err := errors.New("Event created must be for active organization")
+				err := errors.New("event created must be for active organization")
 				ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 				return
 			}
@@ -436,45 +447,75 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			ctx.JSON(http.StatusOK, gin.H{"data": events, "count": len(events)})
 		}).
 		GET("/organizations/:orgId/events/:eventId", func(ctx *gin.Context) {
-			orgIdParam := ctx.Params.ByName("orgId")
-			atoi, err := strconv.Atoi(orgIdParam)
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "The supplied ID is not a valid format"})
+			var params struct {
+				OrgId   uint `uri:"orgId"`
+				EventId uint `uri:"eventId"`
+			}
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.Status(http.StatusBadRequest)
 				return
 			}
-			orgId := uint(atoi)
-
-			eventIdParam := ctx.Params.ByName("eventId")
-			atoi, err = strconv.Atoi(eventIdParam)
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "The supplied ID is not a valid format"})
-				return
-			}
-			eventId := uint(atoi)
+			orgId := params.OrgId
+			eventId := params.EventId
 
 			userId := ctx.GetUint("id")
 			var organization models.Organization
 			db := db.GetDb()
-			db.
+			if err := db.
 				Where(&models.Organization{ID: orgId, OwnerID: userId}).
-				First(&organization)
-			if organization.ID < 1 {
-				err := errors.New("Organization not found")
-				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				First(&organization).Error; err != nil {
+				ctx.Status(http.StatusBadRequest)
 				return
 			}
 			activeOrgId := ctx.GetUint("org")
 			if activeOrgId != orgId {
-				err := errors.New("Event created must be for active organization")
+				err := errors.New("event created must be for active organization")
 				ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 				return
 			}
 			var event models.Event
-			db.
+			if err := db.
 				Where(&models.Event{ID: eventId}).
-				First(&event)
+				First(&event).Error; err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
 
 			ctx.JSON(http.StatusOK, gin.H{"data": event})
+		}).
+		PUT("/organizations/:orgId/events/:eventId/cancel", func(ctx *gin.Context) {
+			var params struct {
+				OrgId   uint `uri:"orgId"`
+				EventId uint `uri:"eventId"`
+			}
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			orgId := params.OrgId
+			eventId := params.EventId
+
+			userId := ctx.GetUint("id")
+			var organization models.Organization
+			db := db.GetDb()
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				if err := tx.
+					Where(&models.Organization{ID: orgId, OwnerID: userId}).
+					First(&organization).Error; err != nil {
+					return err
+				}
+				subq := tx.Where(&models.Event{ID: eventId})
+
+				if err := tx.Where(subq).Update("status = ?", types.EVENT_CANCELED).Error; err != nil {
+					log.Printf("Error on canceling Event [%d]: %s\n", eventId, err.Error())
+					return err
+				}
+				return nil
+			}); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			ctx.Status(http.StatusNoContent)
 		}).
 		GET("/organizations/:orgId/tickets", func(ctx *gin.Context) {
 			var params types.SimpleOrganizationRequestParams
@@ -521,21 +562,28 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				return
 			}
 			var org models.Organization
-			var sales map[string]any
+			var sales struct {
+				TotalRevenue int64 `json:"total_revenue"`
+				TotalSold    int64 `json:"total_sold"`
+			}
 			db := db.GetDb()
-			if err := db.Model(&models.Organization{}).Where("id = ?", params.ID).First(&org).Error; err != nil {
+			if err := db.Where(&models.Organization{ID: params.ID}).First(&org).Error; err != nil {
 				log.Printf("Error retrieving Organization: %s\n", err.Error())
 				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}
 			now := time.Now()
 			past1month := now.AddDate(0, 0, -30)
-			bookingSubquery := db.
+			eventSub := db.
+				Model(&models.Event{}).
+				Where(&models.Event{OrganizerID: params.ID}).
+				Select("id")
+			if err := db.
 				Model(&models.Booking{}).
+				Where("event_id IN (?)", eventSub).
+				Where("status = ?", types.BOOKING_COMPLETED).
+				Where("created_at BETWEEN ? AND ?", past1month, now).
 				Select("SUM(subtotal) as total_revenue", "SUM(qty) as total_sold").
-				Where("status = ?", "completed").
-				Where("created_at BETWEEN ? AND ?", past1month, now)
-			if err := bookingSubquery.
 				Scan(&sales).
 				Error; err != nil {
 				log.Printf("Error executing query: %s\n", err.Error())
@@ -548,6 +596,164 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				"from_date": past1month,
 				"to_date":   now,
 			}})
+		}).
+		GET("/organizations/:orgId/customers", func(ctx *gin.Context) {
+			ctx.Status(http.StatusOK)
+		}).
+		GET("/organizations/:orgId/customers/count", func(ctx *gin.Context) {
+			var params types.SimpleOrganizationRequestParams
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			var org models.Organization
+			db := db.GetDb()
+			if err := db.Where(&models.Organization{ID: params.ID}).First(&org).Error; err != nil {
+				log.Printf("Error retrieving Organization: %s\n", err.Error())
+				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
+			now := time.Now()
+			past1month := now.AddDate(0, 0, -30)
+			var count int64
+			// eventSub := db.Table("events AS E").Where("organizer_id = ?", params.ID)
+			if err := db.
+				Model(&models.Booking{}).
+				Joins("JOIN events E ON event_id=E.id").
+				Where("bookings.created_at >= ? AND E.organizer_id = ?", past1month, org.ID).
+				Distinct("bookings.user_id").
+				Select("bookings.user_id").
+				Count(&count).
+				Error; err != nil {
+				log.Printf("Error on query: %s\n", err.Error())
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			ctx.JSON(http.StatusOK, gin.H{"data": count})
+		}).
+		GET("/organizations/:orgId/customers/daily", func(ctx *gin.Context) {
+			var params types.SimpleOrganizationRequestParams
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			db := db.GetDb()
+			var stats []struct {
+				TxnDate      string `json:"date"`
+				CompletedTxn int    `json:"completed"`
+				PendingTxn   int    `json:"pending"`
+				TotalTxn     int    `json:"total"`
+			}
+			if err := db.Raw(`
+			SELECT
+				TO_CHAR(d::date, 'YYYY-MM-DD') AS txn_date,
+				COUNT(CASE WHEN b.status = 'completed' THEN 1 END) AS completed_txn,
+				COUNT(CASE WHEN b.status = 'pending' THEN 1 END) AS pending_txn,
+				COUNT(b.id) AS total_txn
+			FROM generate_series(
+				CURRENT_DATE - INTERVAL '30 days',
+				CURRENT_DATE,
+				INTERVAL '1 day'
+			) as d
+			LEFT JOIN events e ON e.organizer_id = ?
+			LEFT JOIN bookings b ON b.event_id = e.id AND b.created_at::date = d::date
+			LEFT JOIN users u ON u.id = b.user_id
+			GROUP BY d.d
+			ORDER BY d.d
+			`, params.ID).Scan(&stats).Error; err != nil {
+				log.Printf("Error querying Transaction: %s\n", err.Error())
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			ctx.JSON(http.StatusOK, gin.H{"data": stats})
+		}).
+		GET("/organizations/:orgId/transactions/daily", func(ctx *gin.Context) {
+			var params types.SimpleOrganizationRequestParams
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			/* var query struct {
+				FromDate *string `json:"from_date"`
+			} */
+			/* queryFromDate := time.Now().Format("2006-01-02")
+			if query.FromDate != nil {
+				fromDate, err := time.Parse("2006-01-02", *query.FromDate)
+				if err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				queryFromDate = fromDate.Format("2006-01-02")
+			} */
+
+			db := db.GetDb()
+			var stats []struct {
+				TxnDate      string `json:"date"`
+				CompletedTxn int    `json:"completed"`
+				PendingTxn   int    `json:"pending"`
+				TotalTxn     int    `json:"total"`
+				TotalRev     int    `json:"total_revenue"`
+				Currency     string `json:"currency"`
+			}
+			if err := db.Raw(`
+			SELECT
+				TO_CHAR(d::date, 'YYYY-MM-DD') AS txn_date,
+				COUNT(DISTINCT CASE WHEN t.status = 'paid' THEN 1 END) AS completed_txn,
+				COUNT(DISTINCT CASE WHEN t.status = 'pending' THEN 1 END) AS pending_txn,
+				COUNT(DISTINCT t.id) AS total_txn,
+				COALESCE(SUM(DISTINCT CASE WHEN t.currency = 'usd' THEN ROUND(t.amount_paid/100) ELSE t.amount_paid END),0) AS total_rev
+			FROM generate_series(
+				CURRENT_DATE - INTERVAL '30 days',
+				CURRENT_DATE,
+				INTERVAL '1 day'
+			) as d
+			LEFT JOIN events e ON e.organizer_id = ?
+			LEFT JOIN bookings b ON b.event_id = e.id
+			LEFT JOIN transactions t ON t.id = b.transaction_id AND t.created_at::date = d::date
+			GROUP BY d.d
+			ORDER BY d.d
+			`, params.ID).Scan(&stats).Error; err != nil {
+				log.Printf("Error querying Transaction: %s\n", err.Error())
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			ctx.JSON(http.StatusOK, gin.H{"data": stats})
+		}).
+		GET("/organizations/:orgId/dashboard", func(ctx *gin.Context) {
+			var params types.SimpleOrganizationRequestParams
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			var results []struct {
+				EventID    uint   `json:"id"`
+				EventTitle string `json:"event_title"`
+				TotalRev   int    `json:"total_rev"`
+				TotalQty   int    `json:"total_qty"`
+			}
+			db := db.GetDb()
+			if err := db.
+				Raw(`
+				SELECT
+					e.id AS event_id,
+					e.title AS event_title,
+					COALESCE(SUM(DISTINCT CASE WHEN t.currency = 'usd' THEN ROUND(t.amount_paid/100) ELSE t.amount_paid END),0) AS total_rev,
+					SUM(DISTINCT b.qty) AS total_qty
+				FROM transactions t
+				LEFT JOIN events e ON e.organizer_id = ?
+				LEFT JOIN bookings b ON b.event_id = e.id
+				WHERE t.id = b.transaction_id AND t.created_at >= CURRENT_DATE - INTERVAL '30 days'
+				GROUP BY t.created_at, e.id, e.title
+				ORDER BY total_qty
+				LIMIT 10
+			`, params.ID).
+				Scan(&results).
+				Error; err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			ctx.JSON(http.StatusOK, gin.H{"data": results})
 		}).
 		GET("/organizations/:orgId/admissions", func(ctx *gin.Context) {
 			var params types.SimpleOrganizationRequestParams
@@ -655,14 +861,14 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			db := db.GetDb()
 			db.Where(&models.Organization{ID: orgId, OwnerID: userId}).First(&organization)
 			if organization.ID < 1 {
-				err := errors.New("Organization not found")
+				err := errors.New("organization not found")
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 
 			activeOrgId := ctx.GetUint("org")
 			if activeOrgId != orgId {
-				err := errors.New("Event created must be for active organization")
+				err := errors.New("event created must be for active organization")
 				ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 				return
 			}
@@ -692,12 +898,12 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			db := db.GetDb()
 			db.Where(&models.Organization{ID: orgId, OwnerID: userId}).First(&organization)
 			if organization.ID < 1 {
-				err := errors.New("Organization not found")
+				err := errors.New("organization not found")
 				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}
 			if activeOrgId != orgId && organization.OwnerID != userId {
-				err := errors.New("Organization not found")
+				err := errors.New("organization not found")
 				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}
@@ -739,7 +945,7 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return err
 				}
 				if org.StripeAccountID == nil {
-					err := fmt.Errorf("Organization is not setup properly: %d", orgId)
+					err := fmt.Errorf("organization is not setup properly: %d", orgId)
 					return err
 				}
 				sc := lib.GetStripeClient()
@@ -749,7 +955,7 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return err
 				}
 				if acc == nil {
-					err := errors.New("Account not found")
+					err := errors.New("account not found")
 					return err
 				}
 				accLink, err := sc.V1AccountLinks.Create(context.Background(), &stripe.AccountLinkCreateParams{
@@ -812,7 +1018,7 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return err
 				}
 				if org.StripeAccountID == nil {
-					err := fmt.Errorf("Organization is not setup properly: %d", orgId)
+					err := fmt.Errorf("organization is not setup properly: %d", orgId)
 					return err
 				}
 				sc := lib.GetStripeClient()
@@ -822,7 +1028,7 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return err
 				}
 				if acc == nil {
-					err := errors.New("Account not found")
+					err := errors.New("account not found")
 					return err
 				}
 				accLink, err := sc.V1AccountLinks.Create(context.Background(), &stripe.AccountLinkCreateParams{
@@ -870,16 +1076,19 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					return
 				}
 			}
+			var accountId string
 			if gjson.Valid(val) {
 				var raw map[string]any
 				json.Unmarshal([]byte(val), &raw)
-				accountId := raw["accountId"].(string)
-				onboardingUrl := raw["url"].(string)
+				accountId := gjson.Get(val, "accountId").String()
+				onboardingUrl := gjson.Get(val, "url").String()
 				status := gjson.Get(val, "status").String()
-				ctx.JSON(http.StatusOK, gin.H{"completed": status == "complete", "account_id": accountId, "url": onboardingUrl, "data": raw})
-				return
+				log.Printf("accountId is nil: %v, %v", accountId, accountId == "")
+				if accountId != "" {
+					ctx.JSON(http.StatusOK, gin.H{"completed": status == "complete", "account_id": accountId, "url": onboardingUrl, "data": raw})
+					return
+				}
 			}
-
 			db := db.GetDb()
 			var org models.Organization
 			ss := db.Session(&gorm.Session{PrepareStmt: true})
@@ -889,14 +1098,79 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}
-			sc := lib.GetStripeClient()
-			accountId := org.StripeAccountID
-			if accountId == nil {
+			accountId = *org.StripeAccountID
+			// sc := lib.GetStripeClient()
+			var acc *stripe.Account
+			if org.StripeAccountID == nil && accountId == "" {
+				// Create the Account
+				businessType := "individual"
+				acc, err = account.New(&stripe.AccountParams{
+					BusinessProfile: &stripe.AccountBusinessProfileParams{
+						Name:         stripe.String(org.Name),
+						SupportEmail: stripe.String(org.ContactEmail),
+					},
+					Company: &stripe.AccountCompanyParams{
+						Name: stripe.String(org.Name),
+					},
+					BusinessType: stripe.String(businessType),
+					Type:         stripe.String("express"),
+					Email:        stripe.String(org.ContactEmail),
+					Metadata:     map[string]string{"organizationId": fmt.Sprintf("%d", org.ID)},
+					Capabilities: &stripe.AccountCapabilitiesParams{
+						CardPayments: &stripe.AccountCapabilitiesCardPaymentsParams{
+							Requested: stripe.Bool(true),
+						},
+						Transfers: &stripe.AccountCapabilitiesTransfersParams{
+							Requested: stripe.Bool(true),
+						},
+					},
+				})
+				if err != nil {
+					log.Printf("[Stripe] Error creating Connect account for Organization [%d]: %s\n", orgId, err.Error())
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Something went wrong"})
+					return
+				}
+				accLink, err := accountlink.New(&stripe.AccountLinkParams{
+					Account:    stripe.String(acc.ID),
+					Type:       stripe.String("account_onboarding"),
+					ReturnURL:  stripe.String(fmt.Sprint(os.Getenv("APP_HOST"), "/dashboard")),
+					RefreshURL: stripe.String(fmt.Sprint(os.Getenv("APP_HOST"), "/callback/account/refresh")),
+				})
+				if err != nil {
+					log.Printf("[Stripe] Error creating AccountLink for Organization [%d]: %s\n", orgId, err.Error())
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Something went wrong"})
+					return
+				}
+				go func() {
+					if err := db.Transaction(func(tx *gorm.DB) error {
+						org.StripeAccountID = &acc.ID
+						org.ConnectOnboardingURL = &accLink.URL
+						org.Status = "onboarding"
+						if err := tx.Save(&org).Error; err != nil {
+							return err
+						}
+						return nil
+					}); err != nil {
+						return
+					}
+				}()
+				accountId = acc.ID
+			}
+			acc, err = account.GetByID(accountId, nil)
+			if err != nil {
+				if !errors.Is(err, &stripe.Error{Code: stripe.ErrorCodeResourceMissing}) {
+					log.Printf("Error retrieving Account details for Organization %d: %s\n", orgId, err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+			}
+
+			if acc == nil {
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": "Account not found"})
 				return
 			}
-			log.Println("AccountID:", org.ID, *accountId)
-			stripeAccount, err := sc.V1Accounts.GetByID(context.Background(), *accountId, nil)
+			log.Println("AccountID:", org.ID, accountId)
+			stripeAccount, err := account.GetByID(accountId, nil)
 			if err != nil {
 				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
@@ -932,14 +1206,51 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			orgId := ctx.GetUint("org")
 			var org models.Organization
 			db := db.GetDb()
-			db.Where(&models.Organization{ID: orgId}).First(&org)
-			if org.ID < 1 {
-				err := errors.New("Organization not found")
-				ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			if err := db.Where(&models.Organization{ID: orgId}).First(&org).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					err := errors.New("organization not found")
+					ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				}
+				log.Printf("Error retrieving Orgnization [%d] details: %s\n", orgId, err.Error())
+				ctx.Status(http.StatusBadRequest)
 				return
 			}
 			shared := org.Type == types.ORG_STANDARD
 			ctx.JSON(http.StatusOK, gin.H{"type": org.Type, "shared": shared})
+		}).
+		POST("/organizations/:orgId/verify/send", func(ctx *gin.Context) {
+			var params types.SimpleOrganizationRequestParams
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			var body struct {
+				Email  string `json:"email"`
+				Phone  string `json:"phone"`
+				Method string `json:"method"`
+			}
+			if err := ctx.ShouldBindJSON(&body); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			ctx.Status(http.StatusOK)
+		}).
+		POST("/organizations/:orgId/verify/confirm", func(ctx *gin.Context) {
+			var params types.SimpleOrganizationRequestParams
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			var body struct {
+				Email  string `json:"email"`
+				Phone  string `json:"phone"`
+				Method string `json:"method"`
+			}
+			if err := ctx.ShouldBindJSON(&body); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			ctx.Status(http.StatusOK)
 		})
 	return g
 }

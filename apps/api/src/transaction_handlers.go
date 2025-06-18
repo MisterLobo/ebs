@@ -29,7 +29,7 @@ func transactionHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			orgId := ctx.GetUint("org")
 			userId := ctx.GetUint("id")
 			requestID := uuid.New()
-			url, csid, txnId, err := utils.CreateStripeCheckout(&body, map[string]string{
+			url, csid, txnId, err := utils.CreateStripeCheckout(ctx.Copy(), &body, map[string]string{
 				"orgId":     fmt.Sprint(orgId),
 				"requestId": requestID.String(),
 				"userId":    fmt.Sprint(userId),
@@ -71,7 +71,7 @@ func transactionHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				return
 			}
 			if booking.Status != types.BOOKING_PENDING {
-				err := errors.New("Could not continue to checkout due to expired reservation")
+				err := errors.New("could not continue to checkout due to expired reservation")
 				ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 				return
 			}

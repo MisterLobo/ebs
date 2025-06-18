@@ -1,4 +1,4 @@
-[![Deploy Server to Amazon ECS](https://github.com/MisterLobo/ebs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MisterLobo/ebs/actions/workflows/ci.yml)
+[![Deploy Server to Amazon ECS](https://github.com/MisterLobo/ebs/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/MisterLobo/ebs/actions/workflows/main.yml)
 
 # EventBookingSystem
 
@@ -9,9 +9,22 @@
 [Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/next?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `bunx nx graph` to visually explore what was created. Now, let's get you up to speed!
 
 # ABOUT
-Live Demo: https://silver-elven.cc
+Live Demo: https://app.silver-elven.cc
 
-Silver Elven is an event booking system that aims to provide a platform for hosting events, buying and selling tickets with a simple and easy-to-use user interface. This platform is focused on events that are open and do not have reservations that depend on seating arrangements. In other words, this is intended for a first-come first-served or General Admission events only.
+Silver Elven is an event booking system that aims to provide a platform for hosting events, buying and selling tickets with a simple and easy-to-use user interface. This platform is focused on events that are open and do not require reservations that depend on seating arrangements. In other words, this is intended for a first-come first-served or General Admission events only.
+
+## SCREENSHOTS
+![Reserved tickets](screenshots/booking-tickets.png)
+![List of booked tickets](screenshots/bookings-page.png)
+![Buy tickets](screenshots/buy-tickets.png)
+![Buy tickets](screenshots/buy-tickets-2.png)
+![Email notification for opening of ticket registrations](screenshots/eventopen-email-sample.png)
+![email notification for closing of ticket registrations](screenshots/eventclosed-email-sample.png)
+![events page](screenshots/events-page.png)
+![create event](screenshots/create-event.png)
+![dashboard](screenshots/dashboard.png)
+![events page](screenshots/events-page-2.png)
+![waitlist](screenshots/waitlist.png)
 
 ## Project Details
 This is a monorepo using Nx for running, testing and managing projects
@@ -22,10 +35,10 @@ This is a monorepo using Nx for running, testing and managing projects
 ### Tech Stack
 - Web Application: NextJS, TailwindCSS, Shadcn, Radix
 - Web Server: Go using Gin framework
-- Mobile App: Flutter (Android only)
+- Mobile App: Flutter (tested with Android only)
 - Services integrated:
   - Stripe for Payments
-  - AWS (ECS, EventBridge Scheduler, SQS, SNS, RDS, S3, ECR, EC2, VPC, SES)
+  - AWS (ECS, EventBridge Scheduler, SQS, SNS, RDS, S3, ECR, SES)
   - Vercel for hosting the web app
   - Redis for caching
   - Firebase for user and authentication
@@ -49,6 +62,7 @@ This is a monorepo using Nx for running, testing and managing projects
 - Multi tenancy, RBAC
 - Swagger API docs
 - UI/UX improvements
+- Proper icons, logo, etc.
 
 ## LIMITATIONS
 - Events hosted are only for General Admission types.
@@ -75,7 +89,7 @@ Fork this repo and clone it
 - Redis
 - Kafka - run `docker-compose up` using [docker-compose.yml](https://github.com/MisterLobo/ebs/docker-compose.yml) at the root of the repository
 - Install [atlas cli](https://atlasgo.io/guides/orms/gorm/getting-started) for gorm
-- AWS account to use its services (ECS, EC2, ECR, SQS, SNS, EventBridgeScheduler, etc.)
+- AWS account to use its services (ECS, EC2, ECR, SQS, SNS, S3, EventBridgeScheduler, etc.)
 
 ## Setup
 - for `ebs-app` install the dependencies with `bun install`
@@ -84,6 +98,9 @@ Fork this repo and clone it
 
 ## Database Migration
 - Run the scripts located at `apps/api/scripts` to manage migrations
+- If you use AWS RDS, you need to set up the ECS containers, RDS cluster and EC2 instance in the same VPC which is the recommended way and more secure than exposing the database publicly.
+- The EC2 instance will serve as the jumpbox for connecting to the RDS cluster from your local machine via SSH tunneling
+- Usage of RDS is not required. You can use any cloud db provider such as Neon or Supabase.
 
 ## Run tasks
 

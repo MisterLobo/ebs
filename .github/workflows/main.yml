@@ -22,9 +22,41 @@ env:
   ADMIN_SDK_CREDENTIALS: ${{ secrets.ADMIN_SDK_CREDENTIALS }}
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099"
   REDIS_HOST: "redis://localhost:6379"
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
 jobs:
-  deploy:
+  app_deploy:
+    name: Deploy Web App to Vercel
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      FBASE_API_KEY: ${{ secrets.FBASE_API_KEY }}
+      FBASE_AUTH_DOMAIN: ${{ secrets.FBASE_AUTH_DOMAIN }}
+      FBASE_PROJECT_ID: ${{ secrets.FBASE_PROJECT_ID }}
+      FBASE_STORAGE_BUCKET: ${{ secrets.FBASE_STORAGE_BUCKET }}
+      FBASE_MESSAGING_SENDER_ID: ${{ secrets.FBASE_MESSAGING_SENDER_ID }}
+      FBASE_APP_ID: ${{ secrets.FBASE_APP_ID }}
+    needs: api_deploy
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure Firebase Service Worker
+        run: |
+          cd apps/ebs-app
+          chmod +x ./firebase-sw-config.sh
+          ./firebase-sw-config.sh ${{ env.FBASE_API_KEY }} ${{ env.FBASE_PROJECT_ID }} ${{ env.FBASE_MESSAGING_SENDER_ID }} ${{ env.FBASE_APP_ID }}
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - name: Install Vercel CLI
+        run: bun install --global vercel@latest
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Build Project Artifacts
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
+  api_deploy:
     name: Deploy
     runs-on: ubuntu-latest
     environment: production
@@ -101,12 +133,12 @@ jobs:
           go mod verify
       - name: Get credentials
         run: |
-          cd apps/api/src
           base64 -d <<< ${{ env.ADMIN_SDK_CREDENTIALS }} > admin-sdk-credentials.json
+          cp ./admin-sdk-credentials.json apps/api/src
       - name: Test api
-        run: GIN_MODE=release bunx nx test api
+        run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx test api
       - name: Build api
-        run: GIN_MODE=release bunx nx build api
+        run: GOOGLE_APPLICATION_CREDENTIALS=./admin-sdk-credentials.json GIN_MODE=release bunx nx build api
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

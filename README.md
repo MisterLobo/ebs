@@ -1,4 +1,4 @@
-[![Deploy Server to Amazon ECS](https://github.com/MisterLobo/ebs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MisterLobo/ebs/actions/workflows/ci.yml)
+[![Deploy Server to Amazon ECS](https://github.com/MisterLobo/ebs/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/MisterLobo/ebs/actions/workflows/main.yml)
 
 # EventBookingSystem
 

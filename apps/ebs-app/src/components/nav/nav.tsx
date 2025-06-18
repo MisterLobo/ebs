@@ -7,7 +7,7 @@ import Link from 'next/link'
 const Nav = async () => {
   const authenticated = await isAuthenticated()
   const org = await getActiveOrganization()
-  const hasOrg = !!org?.id && org.type === 'standard'
+  const hasOrg = !!org?.id
 
   return (
     <nav className="h-16 bg-background border-b">

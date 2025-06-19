@@ -104,6 +104,7 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 export const schema = z.object({
   id: z.number(),
@@ -166,7 +167,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "name",
     header: "Name",
     cell: ({ row }) => {
-      return <p>{row.original.name}</p>
+      return <Link href={`/dashboard/events/${row.original.id}`}>{row.original.name}</Link>
     },
     enableHiding: false,
   },

@@ -5,7 +5,7 @@ import { Admission, Booking, Event, EventQueryFilters, NewEventRequestPayload, N
 import { notFound, redirect } from 'next/navigation'
 import { TurnstileServerValidationResponse } from '@marsidev/react-turnstile'
 import { Stripe } from 'stripe'
-import { stripe } from './stripe.server'
+import getStripeApiClient from './stripe.server'
 
 export async function getActiveOrganization(): Promise<Organization | undefined> {
   const $cookies = await cookies()
@@ -999,29 +999,46 @@ export async function getStripeCustomer(): Promise<Stripe.Customer | null> {
   return data as Stripe.Customer
 }
 
-export async function getSubscription(): Promise<Stripe.Subscription | null> {
+export async function getSubscription(): Promise<Record<string, any> & {
+  sub?: Stripe.Subscription,
+  curr?: Stripe.SubscriptionItem,
+  price?: Stripe.Price,
+  prod?: Stripe.Product,
+}> {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
-  const response = await fetch(`${process.env.API_HOST}/customer`, {
+  const response = await fetch(`${process.env.API_HOST}/stripe/subscription`, {
     headers: {
       'Authorization': `Bearer ${token}`,
     },
   })
   if (response.status !== 200) {
     console.error('Something went wrong')
-    return null
+    return {}
   }
   const { data } = await response.json()
-  const user = data as User
-  const customer = await stripe.customers.retrieve(user.account_id as string) as Stripe.Customer
-  const subscriptionData = await stripe.subscriptions.retrieve(customer.id)
-  return subscriptionData as Stripe.Subscription
+  const stripe = getStripeApiClient()
+  const subscriptionData = await stripe.subscriptions.retrieve(data)
+  const subscription = subscriptionData as Stripe.Subscription
+  const defaultSubscription = subscription.items.data?.[0]
+  const price = await stripe.prices.retrieve(defaultSubscription?.price.id, {
+    expand: ['product'],
+  })
+  const prod = price?.product as Stripe.Product
+  console.log(price, prod);
+  
+  return {
+    sub: subscription,
+    curr: defaultSubscription,
+    price,
+    prod,
+  }
 }
 
 export async function getPaymentMethods(): Promise<Stripe.PaymentMethod[] | null> {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
-  const response = await fetch(`${process.env.API_HOST}/customer`, {
+  const response = await fetch(`${process.env.API_HOST}/stripe/payment_methods`, {
     headers: {
       'Authorization': `Bearer ${token}`,
     },
@@ -1034,6 +1051,7 @@ export async function getPaymentMethods(): Promise<Stripe.PaymentMethod[] | null
   const user = data as User
   // const customer = await stripe.customers.retrieve(user.account_id as string)
 
+  const stripe = getStripeApiClient()
   const { data: listData } = await stripe.paymentMethods.list({
     customer: user.account_id,
   })

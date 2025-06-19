@@ -6,6 +6,8 @@ import { ReactNode } from 'react'
 import { OnboardingNotice } from './components/notice'
 import { WebWorker } from '@/components/worker'
 import FCM from '@/components/fcm'
+import { TestEnvironmentAlert } from '@/components/test-env-alert'
+import { isProd } from '@/lib/utils'
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const orgs = await listOrganizations()
@@ -25,6 +27,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <SidebarProvider>
       <AppSidebar teams={orgs} />
       <SidebarInset>
+        {!isProd() && <TestEnvironmentAlert />}
         {(!completed && !account_id) &&
         <div className="flex w-full items-center justify-center">
           <OnboardingNotice url={url} />

@@ -92,22 +92,22 @@ export function NavUser({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer disabled:pointer-events-none" disabled>
                 <Sparkles />
                 Upgrade to Pro
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer disabled:pointer-events-none" onClick={() => router.push('/settings/account')}>
                 <BadgeCheck />
                 Account
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer disabled:pointer-events-none" onClick={() => router.push('/settings/billing')}>
                 <CreditCard />
                 Billing
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer disabled:pointer-events-none" disabled onClick={() => router.push('/settings/account')}>
                 <Bell />
                 Notifications
               </DropdownMenuItem>

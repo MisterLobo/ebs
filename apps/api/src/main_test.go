@@ -234,17 +234,12 @@ func deleteUser(s *TestSuite, email string) error {
 		SkipHooks:         true,
 	})
 	return ss.Transaction(func(tx *gorm.DB) error {
-		if err := db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.
-				Unscoped().
-				Select(clause.Associations).
-				Where("email = ?", email).
-				Delete(&models.User{Email: email}).
-				Error; err != nil {
-				return err
-			}
-			return nil
-		}); err != nil {
+		if err := tx.
+			Unscoped().
+			Select(clause.Associations).
+			Where("email = ?", email).
+			Delete(&models.User{Email: email}).
+			Error; err != nil {
 			log.Printf("Could not delete user [%s] from database: %s\n", email, err.Error())
 			return err
 		}
@@ -715,6 +710,5 @@ func (s *TestSuite) TestEvents() {
 }
 
 func TestRunner(t *testing.T) {
-	t.Parallel()
 	suite.Run(t, new(TestSuite))
 }

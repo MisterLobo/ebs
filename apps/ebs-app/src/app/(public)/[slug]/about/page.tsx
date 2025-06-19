@@ -4,6 +4,7 @@ import { importURLPatternPolyfill } from '@/lib/utils'
 import { CheckCircle } from 'lucide-react'
 import { headers } from 'next/headers'
 import EventCard from './components/event-card'
+import { Badge } from '@/components/ui/badge'
 
 export default async function SlugAboutPage() {
   await importURLPatternPolyfill()
@@ -17,6 +18,10 @@ export default async function SlugAboutPage() {
   return (
     <div className="container">
       <p className="text-3xl">About {about?.name}</p>
+      <div className="flex gap-2">
+        <Badge>{ about?.verified ? 'account verified' : 'account unverified' }</Badge>
+        <Badge>{ about?.payment_verified ? 'payment verified' : 'payment unverified' }</Badge>
+      </div>
       <p className="text-sm">{about?.about ?? 'No description'}</p>
       <p className="text-xs">Contact: {about?.email}</p>
       <p className="text-xs">{about?.country}</p>

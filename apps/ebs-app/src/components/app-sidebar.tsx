@@ -143,7 +143,7 @@ const data = {
       items: [
         {
           title: 'Revenue Summary',
-          url: '/dashboard//sales/revenue',
+          url: '/dashboard/sales/revenue',
         },
       ],
     },
@@ -153,19 +153,19 @@ const data = {
       items: [
         {
           title: 'General',
-          url: '/settings#general',
+          url: '/dashboard/settings#general',
         },
         {
           title: 'Team',
-          url: '/settings#team',
+          url: '/dashboard/settings#team',
         },
         {
           title: 'Billing',
-          url: '/settings#billing',
+          url: '/dashboard/settings#billing',
         },
         {
           title: 'Limits',
-          url: '/settings#limits',
+          url: '/dashboard/settings#limits',
         },
       ],
     },

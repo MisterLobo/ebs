@@ -21,3 +21,5 @@ export function isUpcoming(initialDate: string) {
   const result = isFuture(nd)
   return result
 }
+
+export const isProd = () => process.env.APP_ENV === 'production'

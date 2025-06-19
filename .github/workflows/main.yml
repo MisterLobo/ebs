@@ -183,6 +183,7 @@ jobs:
     name: Mobile app release build
     runs-on: ubuntu-latest
     environment: production
+    needs: api_deploy
     steps:
       - name: Clone repository
         uses: actions/checkout@v4

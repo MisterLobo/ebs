@@ -1,3 +1,10 @@
 import { Stripe } from 'stripe'
 
-export const stripe = new Stripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY as string)
+let stripe: Stripe
+
+export default function getStripeApiClient() {
+  if (!stripe) {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string)
+  }
+  return stripe
+}

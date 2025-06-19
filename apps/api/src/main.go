@@ -274,19 +274,21 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 			}
 
 			db := db.GetDb()
-			var muser models.User
 			err = db.Transaction(func(tx *gorm.DB) error {
-				err := tx.
+				var muser models.User
+				if err := tx.
 					Model(&models.User{}).
-					Select("id").
-					Where(&models.User{Email: user.Email}).
-					Find(&muser).
-					Error
-
-				if err != nil {
+					Select("tenant_id").
+					Where("email = ?", body.Email).
+					First(&muser).
+					Error; err != nil {
+					if !errors.Is(err, gorm.ErrRecordNotFound) {
+						return errors.New("could not complete transaction")
+					}
+				}
+				if muser.TenantID != nil {
+					err := errors.New("user is already registered in the system. Please proceed to Log In")
 					log.Printf("error: %s\n", err.Error())
-					err := errors.New("user already exists")
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return err
 				}
 
@@ -296,9 +298,9 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 					Role:  types.ROLE_OWNER,
 					Name:  user.DisplayName,
 				}
-				err = tx.Create(&newUser).Error
-				if err != nil {
-					return err
+				if err := tx.Create(&newUser).Error; err != nil {
+					log.Printf("Error creating user: %s\n", err.Error())
+					return fmt.Errorf("error creating user: %s", user.Email)
 				}
 
 				newOrg := models.Organization{
@@ -309,8 +311,7 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 					TenantID:     newUser.TenantID,
 					Status:       "active",
 				}
-				err = tx.Create(&newOrg).Error
-				if err != nil {
+				if err := tx.Create(&newOrg).Error; err != nil {
 					return err
 				}
 
@@ -320,8 +321,7 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 					Name:           "Default",
 					Status:         "active",
 				}
-				err = tx.Create(&newTeam).Error
-				if err != nil {
+				if err := tx.Create(&newTeam).Error; err != nil {
 					return err
 				}
 				sc := lib.GetStripeClient()

@@ -34,8 +34,8 @@ type User struct {
 
 	Bookings      []*Booking      `gorm:"foreignKey:user_id" json:"bookings,omitempty"`
 	Organizations []*Organization `gorm:"foreignKey:owner_id" json:"organizations,omitempty"`
-	Subscriptions []*Event        `gorm:"many2many:event_subscriptions;" json:"subscriptions,omitempty"`
-	Teams         []*Team         `gorm:"many2many:team_members;" json:"teams,omitempty"`
+	// Subscriptions []*Event        `gorm:"many2many:event_subscriptions;" json:"subscriptions,omitempty"`
+	// Teams         []*Team         `gorm:"many2many:team_members;" json:"teams,omitempty"`
 
 	types.Timestamps
 }

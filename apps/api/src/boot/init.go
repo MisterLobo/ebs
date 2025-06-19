@@ -95,12 +95,14 @@ func InitBroker() {
 	go UpdateExpiredJobs()
 	go StatusUpdateExpiredBookings()
 	if appEnv == "test" || appEnv == "prod" {
-		go InitTopics()
-		go InitQueues()
+		go func() {
+			InitTopics()
+			InitQueues()
 
-		go lib.S3ListObjects()
-		go common.SQSConsumers()
-		go common.SNSSubscribes()
+			lib.S3ListObjects()
+			common.SQSConsumers()
+			common.SNSSubscribes()
+		}()
 	} else {
 		var eventsToOpenConsumer types.Handler = common.KafkaEventsToOpenConsumer
 		go lib.KafkaConsumer("events", "EventsToOpen", &eventsToOpenConsumer)
@@ -135,21 +137,21 @@ func InitBroker() {
 func InitQueues() {
 	emailQueue := os.Getenv("EMAIL_QUEUE")
 	lib.SQSCreateQueue(emailQueue)
+	lib.SQSCreateQueue("EventsToOpen")
+	lib.SQSCreateQueue("EventsToClose")
+	lib.SQSCreateQueue("EventsToComplete")
 	lib.SQSCreateQueue("PendingReservations")
 	lib.SQSCreateQueue("PendingTransactions")
 	lib.SQSCreateQueue("PaymentsProcessing")
 	lib.SQSCreateQueue("ExpiredBookings")
 	lib.SQSCreateQueue("PaymentTransactionUpdates")
-	lib.SQSCreateQueue("PaymentTransactionUpdates")
+	lib.SQSCreateQueue("DLQ")
 }
 func InitTopics() {
 	lib.SNSCreateTopic("EventsToOpen")
 	lib.SNSCreateTopic("EventsToClose")
 	lib.SNSCreateTopic("EventsToComplete")
 	lib.SNSCreateTopic("PendingTransactions")
-
-	emailQueue := os.Getenv("EMAIL_QUEUE")
-	lib.SNSCreateTopic(emailQueue)
 }
 
 func InitScheduler() {

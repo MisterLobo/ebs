@@ -190,8 +190,8 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					log.Printf("Could not save qrcode to file [%s]: %s\n", filepath, err.Error())
 					return err
 				}
-				appEnv := os.Getenv("APP_ENV")
-				if appEnv == "local" {
+				apiEnv := os.Getenv("API_ENV")
+				if apiEnv != "local" {
 					url, err := awslib.S3UploadAsset(filename, filepath)
 					if err != nil {
 						log.Printf("Error uploading asset to S3 bucket: %s\n", err.Error())

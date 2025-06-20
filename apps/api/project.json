@@ -24,6 +24,27 @@
         "cwd": "apps/api/src/",
         "command": "go test -race"
       }
+    },
+    "emu": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/api/",
+        "command": "firebase emulators:start"
+      }
+    },
+    "stripe:mock": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/api/",
+        "command": "stripe-mock"
+      }
+    },
+    "stripe:wh": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/api/scripts",
+        "command": "./stripe.sh"
+      }
     }
   },
   "tags": []

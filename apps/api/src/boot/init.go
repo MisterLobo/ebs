@@ -7,6 +7,7 @@ import (
 	"ebs/src/lib"
 	"ebs/src/models"
 	"ebs/src/types"
+	"ebs/src/utils"
 	"errors"
 	"io"
 	"log"
@@ -89,12 +90,12 @@ func InitDb() *gorm.DB {
 }
 
 func InitBroker() {
-	appEnv := os.Getenv("APP_ENV")
+	apiEnv := os.Getenv("API_ENV")
 	go common.UpdateMissingSlugs()
 	go RecoverQueuedJobs()
 	go UpdateExpiredJobs()
 	go StatusUpdateExpiredBookings()
-	if appEnv == "test" || appEnv == "prod" {
+	if apiEnv == "test" || apiEnv == "production" {
 		go func() {
 			InitTopics()
 			InitQueues()
@@ -136,22 +137,22 @@ func InitBroker() {
 
 func InitQueues() {
 	emailQueue := os.Getenv("EMAIL_QUEUE")
-	lib.SQSCreateQueue(emailQueue)
-	lib.SQSCreateQueue("EventsToOpen")
-	lib.SQSCreateQueue("EventsToClose")
-	lib.SQSCreateQueue("EventsToComplete")
-	lib.SQSCreateQueue("PendingReservations")
-	lib.SQSCreateQueue("PendingTransactions")
-	lib.SQSCreateQueue("PaymentsProcessing")
-	lib.SQSCreateQueue("ExpiredBookings")
-	lib.SQSCreateQueue("PaymentTransactionUpdates")
-	lib.SQSCreateQueue("DLQ")
+	lib.SQSCreateQueue(utils.WithSuffix(emailQueue))
+	lib.SQSCreateQueue(utils.WithSuffix("EventsToOpen"))
+	lib.SQSCreateQueue(utils.WithSuffix("EventsToClose"))
+	lib.SQSCreateQueue(utils.WithSuffix("EventsToComplete"))
+	lib.SQSCreateQueue(utils.WithSuffix("PendingReservations"))
+	lib.SQSCreateQueue(utils.WithSuffix("PendingTransactions"))
+	lib.SQSCreateQueue(utils.WithSuffix("PaymentsProcessing"))
+	lib.SQSCreateQueue(utils.WithSuffix("ExpiredBookings"))
+	lib.SQSCreateQueue(utils.WithSuffix("PaymentTransactionUpdates"))
+	lib.SQSCreateQueue(utils.WithSuffix("DLQ"))
 }
 func InitTopics() {
-	lib.SNSCreateTopic("EventsToOpen")
-	lib.SNSCreateTopic("EventsToClose")
-	lib.SNSCreateTopic("EventsToComplete")
-	lib.SNSCreateTopic("PendingTransactions")
+	lib.SNSCreateTopic(utils.WithSuffix("EventsToOpen"))
+	lib.SNSCreateTopic(utils.WithSuffix("EventsToClose"))
+	lib.SNSCreateTopic(utils.WithSuffix("EventsToComplete"))
+	lib.SNSCreateTopic(utils.WithSuffix("PendingTransactions"))
 }
 
 func InitScheduler() {

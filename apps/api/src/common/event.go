@@ -95,7 +95,11 @@ func sendOpenEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToOpen_%d", eventId), true, plucked...)
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv != "production" {
+		apiEnv = fmt.Sprintf("_%s", apiEnv)
+	}
+	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToOpen%s_%d", apiEnv, eventId), true, plucked...)
 
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
@@ -218,7 +222,11 @@ func sendClosedEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToClose_%d", eventId), true, plucked...)
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv != "production" {
+		apiEnv = fmt.Sprintf("_%s", apiEnv)
+	}
+	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToClose%s_%d", apiEnv, eventId), true, plucked...)
 
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
@@ -324,7 +332,11 @@ func sendCompletedEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToComplete_%d", eventId), true, plucked...)
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv != "production" {
+		apiEnv = fmt.Sprintf("_%s", apiEnv)
+	}
+	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToComplete%s_%d", apiEnv, eventId), true, plucked...)
 
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
@@ -395,7 +407,7 @@ func KafkaEventsToCompleteConsumer(spayload string) {
 }
 
 func EventsToOpenConsumer() {
-	qname := "EventsToOpen"
+	qname := utils.WithSuffix("EventsToOpen")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
@@ -457,7 +469,7 @@ func EventsToOpenConsumer() {
 }
 
 func EventsToCloseConsumer() {
-	qname := "EventsToClose"
+	qname := utils.WithSuffix("EventsToClose")
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
 			log.Printf("[%s]: Received invalid json body. Aborting", qname)
@@ -518,7 +530,7 @@ func EventsToCloseConsumer() {
 }
 
 func EventsToCompleteConsumer() {
-	qname := "EventsToComplete"
+	qname := utils.WithSuffix("EventsToComplete")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {

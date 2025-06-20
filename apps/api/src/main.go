@@ -439,9 +439,9 @@ func main() {
 		log.Println("WS server listening for connections...")
 	}
 
-	appEnv := os.Getenv("APP_ENV")
+	apiEnv := os.Getenv("API_ENV")
 	appHost := os.Getenv("APP_HOST")
-	if appEnv == "local" {
+	if apiEnv == "local" {
 		router.Use(cors.Default())
 	} else {
 		cc := cors.DefaultConfig()

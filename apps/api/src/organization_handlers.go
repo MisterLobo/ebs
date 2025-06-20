@@ -272,8 +272,8 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			}
 			rd.JSONSet(context.Background(), fmt.Sprintf("%d:active", userId), "$", org)
 			rd.Expire(context.Background(), key, time.Hour)
-			appEnv := os.Getenv("APP_ENV")
-			secure := appEnv != "local"
+			apiEnv := os.Getenv("API_ENV")
+			secure := apiEnv != "local"
 			ctx.SetCookie("token", tokenCookie, 3600, "/", os.Getenv("APP_HOST"), secure, true)
 			ctx.JSON(http.StatusOK, gin.H{"access_token": tokenCookie})
 		}).

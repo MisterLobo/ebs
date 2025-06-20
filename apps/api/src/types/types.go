@@ -12,6 +12,13 @@ import (
 	"gorm.io/gorm"
 )
 
+type EnvKey string
+
+const (
+	Test       EnvKey = "test"
+	Production EnvKey = "production"
+)
+
 type Timestamps struct {
 	CreatedAt *time.Time      `gorm:"autoCreateTime:nano" json:"created_at"`
 	UpdatedAt *time.Time      `gorm:"autoUpdateTime:nano" json:"updated_at"`

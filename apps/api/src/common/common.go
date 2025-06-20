@@ -3,25 +3,28 @@ package common
 import (
 	"ebs/src/lib"
 	awslib "ebs/src/lib/aws"
+	"ebs/src/utils"
+	"fmt"
 	"log"
+	"os"
 )
 
 func SQSConsumers() {
-	dlq := awslib.NewSQSConsumer("DLQ", func(payload string) {
+	dlq := awslib.NewSQSConsumer(utils.WithSuffix("DLQ"), func(payload string) {
 		log.Println("DLQ: message received")
 	})
 	dlq.Listen()
-	pr := awslib.NewSQSConsumer("PendingReservations", func(payload string) {
+	pr := awslib.NewSQSConsumer(utils.WithSuffix("PendingReservations"), func(payload string) {
 		// TODO: implement PendingReservations handler
 		log.Println("PendingReservations: message received")
 	})
 	pr.Listen()
-	eb := awslib.NewSQSConsumer("ExpiredBookings", func(payload string) {
+	eb := awslib.NewSQSConsumer(utils.WithSuffix("ExpiredBookings"), func(payload string) {
 		// TODO: implement ExpiredBookings handler
 		log.Println("ExpiredBookings: message received")
 	})
 	eb.Listen()
-	pp := awslib.NewSQSConsumer("PaymentsProcessing", func(payload string) {
+	pp := awslib.NewSQSConsumer(utils.WithSuffix("PaymentsProcessing"), func(payload string) {
 		// TODO: implement PaymentsProcessing handler
 		log.Println("PaymentsProcessing: message received")
 	})
@@ -35,10 +38,14 @@ func SQSConsumers() {
 }
 
 func SNSSubscribes() {
-	eventsToOpen := awslib.NewSNSSubscriber("EventsToOpen")
-	eventsToOpen.Subscribe("sqs", lib.GetQueueArn("EventsToOpen"))
-	eventsToClose := awslib.NewSNSSubscriber("EventsToClose")
-	eventsToClose.Subscribe("sqs", lib.GetQueueArn("EventsToClose"))
-	eventsToComplete := awslib.NewSNSSubscriber("EventsToComplete")
-	eventsToComplete.Subscribe("sqs", lib.GetQueueArn("EventsToComplete"))
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv != "production" {
+		apiEnv = fmt.Sprintf("_%s", apiEnv)
+	}
+	eventsToOpen := awslib.NewSNSSubscriber(utils.WithSuffix("EventsToOpen"))
+	eventsToOpen.Subscribe("sqs", lib.GetQueueArn(utils.WithSuffix("EventsToOpen")))
+	eventsToClose := awslib.NewSNSSubscriber(utils.WithSuffix("EventsToClose"))
+	eventsToClose.Subscribe("sqs", lib.GetQueueArn(utils.WithSuffix("EventsToClose")))
+	eventsToComplete := awslib.NewSNSSubscriber(utils.WithSuffix("EventsToComplete"))
+	eventsToComplete.Subscribe("sqs", lib.GetQueueArn(utils.WithSuffix("EventsToComplete")))
 }

@@ -125,6 +125,7 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 
 		// Set a schedule for completing the event
 		go func() {
+			topicName := WithSuffix("EventsToComplete")
 			runsAt := event.DateTime
 			runDate := time.Date(
 				runsAt.UTC().Year(),
@@ -151,12 +152,12 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 					"payloadId":        payloadId,
 					"id":               int64(eventId),
 					"producerClientId": "EventsToCompleteProducer",
-					"topic":            "EventsToComplete",
+					"topic":            topicName,
 					"table":            "events",
 				},
 				Source:     "Events",
 				SourceType: "table",
-				Topic:      "EventsToComplete",
+				Topic:      topicName,
 			}
 			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
 			if err != nil {
@@ -168,6 +169,7 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 
 		// Set a schedule for Closing the ticket reservation
 		go func() {
+			topicName := WithSuffix("EventsToClose")
 			runsAt := event.Deadline
 			runDate := time.Date(
 				runsAt.UTC().Year(),
@@ -194,12 +196,12 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 					"payloadId":        payloadId,
 					"id":               int64(eventId),
 					"producerClientId": "EventsToCloseProducer",
-					"topic":            "EventsToClose",
+					"topic":            topicName,
 					"table":            "events",
 				},
 				Source:     "Events",
 				SourceType: "table",
-				Topic:      "EventsToClose",
+				Topic:      topicName,
 			}
 			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
 			if err != nil {
@@ -216,6 +218,7 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 	}
 	if !params.Publish && params.Mode == "scheduled" && opens_at != nil {
 		go func() {
+			topicName := WithSuffix("EventsToOpen")
 			runsAt := event.OpensAt
 			runDate := time.Date(
 				runsAt.UTC().Year(),
@@ -242,12 +245,12 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 					"payloadId":        payloadId,
 					"id":               int64(eventId),
 					"producerClientId": "EventsToOpenProducer",
-					"topic":            "EventsToOpen",
+					"topic":            topicName,
 					"table":            "events",
 				},
 				Source:     "Events",
 				SourceType: "table",
-				Topic:      "EventsToOpen",
+				Topic:      topicName,
 			}
 			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
 			if err != nil {
@@ -1053,4 +1056,20 @@ func CreateStripeAccount(org *models.Organization) (*stripe.Account, string, err
 		return acc, "", err
 	}
 	return acc, link.URL, nil
+}
+
+func WithSuffix(topic string) string {
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv != string(types.Production) {
+		topic = fmt.Sprintf("%s_%s", topic, apiEnv)
+	}
+	return topic
+}
+
+func WithPrefix(topic string) string {
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv != string(types.Production) {
+		topic = fmt.Sprintf("%s_%s", apiEnv, topic)
+	}
+	return topic
 }

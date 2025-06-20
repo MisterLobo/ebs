@@ -4,9 +4,7 @@ import (
 	"ebs/src/lib"
 	awslib "ebs/src/lib/aws"
 	"ebs/src/utils"
-	"fmt"
 	"log"
-	"os"
 )
 
 func SQSConsumers() {
@@ -38,10 +36,6 @@ func SQSConsumers() {
 }
 
 func SNSSubscribes() {
-	apiEnv := os.Getenv("API_ENV")
-	if apiEnv != "production" {
-		apiEnv = fmt.Sprintf("_%s", apiEnv)
-	}
 	eventsToOpen := awslib.NewSNSSubscriber(utils.WithSuffix("EventsToOpen"))
 	eventsToOpen.Subscribe("sqs", lib.GetQueueArn(utils.WithSuffix("EventsToOpen")))
 	eventsToClose := awslib.NewSNSSubscriber(utils.WithSuffix("EventsToClose"))

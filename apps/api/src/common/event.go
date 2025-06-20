@@ -407,7 +407,7 @@ func KafkaEventsToCompleteConsumer(spayload string) {
 }
 
 func EventsToOpenConsumer() {
-	qname := "EventsToOpen"
+	qname := utils.WithSuffix("EventsToOpen")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
@@ -469,7 +469,7 @@ func EventsToOpenConsumer() {
 }
 
 func EventsToCloseConsumer() {
-	qname := "EventsToClose"
+	qname := utils.WithSuffix("EventsToClose")
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
 			log.Printf("[%s]: Received invalid json body. Aborting", qname)
@@ -530,7 +530,7 @@ func EventsToCloseConsumer() {
 }
 
 func EventsToCompleteConsumer() {
-	qname := "EventsToComplete"
+	qname := utils.WithSuffix("EventsToComplete")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {

@@ -16,6 +16,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type Key string
+
+const (
+	varsKey Key = "vars"
+)
+
 var scheduler gocron.Scheduler
 
 func GetScheduler() (gocron.Scheduler, error) {
@@ -122,7 +128,7 @@ func CreateCronSchedule(clientId, topic string, startDate time.Time, scheduleExp
 
 type Scheduler interface {
 	Name() string
-	CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB, fn *types.KafkaTaskHandler) (*uuid.UUID, error)
+	CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB) (*uuid.UUID, error)
 }
 
 type EventBridgeScheduler struct {
@@ -133,8 +139,8 @@ func (e *EventBridgeScheduler) Name() string {
 	return "EventBridge"
 }
 
-func (e *EventBridgeScheduler) CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB, fn *types.KafkaTaskHandler) (*uuid.UUID, error) {
-	vars := ctx.Value("vars").(map[string]string)
+func (e *EventBridgeScheduler) CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB) (*uuid.UUID, error) {
+	vars := ctx.Value(varsKey).(map[string]string)
 	name := vars["name"]
 	topic := vars["topic"]
 	in := *e.inner
@@ -174,7 +180,7 @@ type LocalScheduler struct {
 func (l *LocalScheduler) Name() string {
 	return "Local"
 }
-func (l *LocalScheduler) CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB, fn *types.KafkaTaskHandler) (*uuid.UUID, error) {
+func (l *LocalScheduler) CreateScheduleWithStartDate(ctx context.Context, s time.Time, p types.JSONB) (*uuid.UUID, error) {
 	in := *l.inner
 	j, err := in.NewJob(
 		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(s)),
@@ -216,12 +222,6 @@ func CreateScheduler() Scheduler {
 	return local
 }
 
-type Key string
-
-const (
-	varsKey Key = "vars"
-)
-
 // Wrapper for creating scheduled job based on the app environment. local will use the LocalScheduler otherwise will use AWS EventBridge Scheduler
 func NewScheduledJob(startDate time.Time, vars map[string]string, p types.JSONB) (*uuid.UUID, error) {
 	sch := CreateScheduler()
@@ -229,8 +229,7 @@ func NewScheduledJob(startDate time.Time, vars map[string]string, p types.JSONB)
 	ctx = context.WithValue(ctx, varsKey, vars)
 	log.Printf("Created scheduler with name: %s\n", sch.Name())
 
-	var h types.KafkaTaskHandler = KafkaTaskHandlerFunc
-	sid, err := sch.CreateScheduleWithStartDate(ctx, startDate, p, &h)
+	sid, err := sch.CreateScheduleWithStartDate(ctx, startDate, p)
 	if err != nil {
 		return nil, err
 	}

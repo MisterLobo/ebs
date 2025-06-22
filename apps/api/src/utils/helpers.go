@@ -445,14 +445,25 @@ func GetTicketsForEvent(id uint, isOwner bool) ([]*models.Ticket, error) {
 func PublishEvent(id uint) error {
 	db := db.GetDb()
 	err := db.Transaction(func(tx *gorm.DB) error {
-		err := tx.
+		var ticketCount int64
+		if err := tx.
+			Model(&models.Ticket{}).
+			Where("event_id = ?", id).
+			Count(&ticketCount).
+			Error; err != nil {
+			return err
+		}
+		if ticketCount == 0 {
+			return errors.New("must have at least one ticket open to publish")
+		}
+		if err := tx.
 			Model(&models.Event{}).
 			Where("id = ? AND status IN (?)", id, []types.EventStatus{
 				types.EVENT_DRAFT,
 				types.EVENT_TICKETS_NOTIFY,
 			}).
-			Update("status", types.EVENT_REGISTRATION).Error
-		if err != nil {
+			Update("status", types.EVENT_REGISTRATION).
+			Error; err != nil {
 			return err
 		}
 		return nil

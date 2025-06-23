@@ -28,6 +28,7 @@ func SQSConsumers() {
 	})
 	pp.Listen()
 
+	go EmailsToSendConsumer()
 	go EventsToOpenConsumer()
 	go EventsToCloseConsumer()
 	go EventsToCompleteConsumer()

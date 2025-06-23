@@ -115,7 +115,7 @@ func InitBroker() {
 		go lib.KafkaConsumer("events", "EventsToComplete", &eventsToCompleteConsumer)
 
 		emailQueue := os.Getenv("EMAIL_QUEUE")
-		var emailsToSendConsumer types.Handler = common.EmailsToSendConsumer
+		var emailsToSendConsumer types.Handler = common.KafkaEmailsToSendConsumer
 		go lib.KafkaConsumer("emails", emailQueue, &emailsToSendConsumer)
 
 		var pendingTxnConsumer types.Handler = common.KafkaPendingTransactionsConsumer

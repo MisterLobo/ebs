@@ -591,7 +591,7 @@ func EventsToCompleteConsumer() {
 	c.Listen()
 }
 
-func EmailsToSendConsumer(spayload string) {
+func KafkaEmailsToSendConsumer(spayload string) {
 	if !gjson.Valid(spayload) {
 		log.Println("Received invalid json body. Aborting")
 		return
@@ -641,4 +641,60 @@ func EmailsToSendConsumer(spayload string) {
 		}
 		log.Printf("[MAILER]: an email has been sent to %s\n", to)
 	}()
+}
+
+func EmailsToSendConsumer() {
+	qname := utils.WithSuffix("EmailsToSend")
+	log.Printf("%s: Listening for messages...", qname)
+	c := awslib.NewSQSConsumer(qname, func(spayload string) {
+		if !gjson.Valid(spayload) {
+			log.Printf("[%s]: Received invalid json body. Aborting", qname)
+			return
+		}
+		from := gjson.Get(spayload, "from").String()
+		fromName := gjson.Get(spayload, "from-name").String()
+		subject := gjson.Get(spayload, "subject").String()
+		log.Printf("from [%s] with subject: %s\n", from, subject)
+
+		toArr := gjson.Get(spayload, "to").Array()
+		to := make([]string, 0)
+		for _, item := range toArr {
+			to = append(to, item.String())
+		}
+		ccArr := gjson.Get(spayload, "cc").Array()
+		cc := make([]string, 0)
+		for _, item := range ccArr {
+			cc = append(cc, item.String())
+		}
+		bccArr := gjson.Get(spayload, "bcc").Array()
+		bcc := make([]string, 0)
+		for _, item := range bccArr {
+			bcc = append(bcc, item.String())
+		}
+		replyTo := gjson.Get(spayload, "reply-to").String()
+		var body types.JSONB
+		if err := json.Unmarshal([]byte(spayload), &body); err != nil {
+			log.Printf("error deserializing json: %s\n", err.Error())
+			return
+		}
+		go func() {
+			input := &lib.SendMailInput{
+				From:     from,
+				FromName: fromName,
+				To:       to,
+				Cc:       cc,
+				Bcc:      bcc,
+				ReplyTo:  replyTo,
+				Subject:  body["subject"].(string),
+				Body:     body["body"].(string),
+				Html:     body["html"].(bool),
+			}
+			if err := lib.SendMail(input); err != nil {
+				log.Printf("[MAILER] error sending email: %s\n", err.Error())
+				return
+			}
+			log.Printf("[MAILER]: an email has been sent to %s\n", to)
+		}()
+	})
+	c.Listen()
 }

@@ -3,6 +3,7 @@ package mailer
 import (
 	"ebs/src/lib"
 	"ebs/src/types"
+	"ebs/src/utils"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,7 +24,7 @@ func NewMailerMessage(input *lib.SendMailInput) error {
 		"subject":   input.Subject,
 	}
 	if apiEnv == "local" {
-		if err := lib.KafkaProduceMessage("emails", emailQueue, emailBody); err != nil {
+		if err := lib.KafkaProduceMessage("emails", utils.WithSuffix(emailQueue), emailBody); err != nil {
 			return fmt.Errorf("error sending message to queue: %s", err.Error())
 		}
 	}
@@ -31,7 +32,7 @@ func NewMailerMessage(input *lib.SendMailInput) error {
 	if err != nil {
 		return err
 	}
-	if err := lib.SQSProduceMessage(emailQueue, string(body)); err != nil {
+	if err := lib.SQSProduceMessage(utils.WithSuffix(emailQueue), string(body)); err != nil {
 		return fmt.Errorf("error sending message to queue: %s", err.Error())
 	}
 	return nil

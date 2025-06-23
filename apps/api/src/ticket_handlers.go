@@ -120,11 +120,12 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			}
 			tempdir := os.Getenv("TEMP_DIR")
 			if content != "" {
+				log.Printf("[content]: %s", content)
 				if query.ShareLink {
 					ctx.JSON(http.StatusOK, gin.H{"url": content})
 					return
 				}
-				filepath = path.Join(wd, "..", tempdir, fmt.Sprintf("%s.jpeg", filename))
+				filepath = path.Join(wd, tempdir, fmt.Sprintf("%s.jpeg", filename))
 				if err := awslib.S3DownloadAsset(filename); err != nil {
 					log.Printf("Error downloading asset [%s] from S3 bucket: %s\n", filename, err.Error())
 					ctx.Status(http.StatusBadRequest)
@@ -185,27 +186,34 @@ func ticketHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				if err != nil {
 					return err
 				}
-				filepath = path.Join(wd, "..", tempdir, fmt.Sprintf("%s.jpeg", filename))
+				filepath = path.Join(wd, tempdir, fmt.Sprintf("%s.jpeg", filename))
 				if err = qrc.Save(filepath); err != nil {
 					log.Printf("Could not save qrcode to file [%s]: %s\n", filepath, err.Error())
 					return err
 				}
-				appEnv := os.Getenv("APP_ENV")
-				if appEnv == "local" {
+				signedURL = filepath
+				apiEnv := os.Getenv("API_ENV")
+				if apiEnv != "local" {
 					url, err := awslib.S3UploadAsset(filename, filepath)
 					if err != nil {
 						log.Printf("Error uploading asset to S3 bucket: %s\n", err.Error())
 						return err
 					}
 					signedURL = *url
-					rd.SetEx(context.Background(), filename, signedURL, 2*time.Hour)
-					return nil
 				}
-				signedURL = filepath
+				rd.SetEx(context.Background(), filename, signedURL, 2*time.Hour)
 				return nil
 			})
 			if err != nil {
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if query.ShareLink {
+				preview := fmt.Sprintf("%s/api/v1/share/%s", os.Getenv("API_HOST"), filename)
+				if os.Getenv("API_ENV") != "local" {
+					preview = signedURL
+				}
+				ctx.JSON(http.StatusOK, gin.H{"url": preview})
 				return
 			}
 			ctx.FileAttachment(signedURL, "eticket.jpeg")

@@ -20,6 +20,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"time"
@@ -30,6 +31,8 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/stripe/stripe-go/v82"
 	engineiotypes "github.com/zishang520/engine.io/v2/types"
 	"github.com/zishang520/socket.io/v2/socket"
@@ -65,6 +68,10 @@ func (c Claims) GetAudience() (jwt.ClaimStrings, error) {
 }
 
 var jwtKey = []byte(os.Getenv("JWT_SECRET"))
+
+const (
+	apiPrefix string = "/api/v1"
+)
 
 var eventDateTimeValidatorFunc validator.Func = func(fl validator.FieldLevel) bool {
 	date, ok := fl.Field().Interface().(string)
@@ -176,7 +183,30 @@ func maintenanceModeMiddleware(g *gin.Engine) *gin.Engine {
 }
 
 func apiv1Group(g *gin.Engine) *gin.RouterGroup {
-	apiv1 := g.Group("/api/v1")
+	apiv1 := g.Group(apiPrefix)
+	return apiv1
+}
+
+func publicRoutes(g *gin.Engine) *gin.RouterGroup {
+	apiv1 := apiv1Group(g)
+	apiv1.GET("/share/:filename", func(ctx *gin.Context) {
+		apiEnv := os.Getenv("API_ENV")
+		if apiEnv != "local" {
+			ctx.Status(http.StatusNotFound)
+			return
+		}
+		var params struct {
+			Filename string `uri:"filename" binding:"required"`
+		}
+		if err := ctx.ShouldBindUri(&params); err != nil {
+			ctx.Status(http.StatusBadRequest)
+			return
+		}
+		assets := os.Getenv("TEMP_DIR")
+		filePath := path.Join(assets, fmt.Sprintf("%s.jpeg", params.Filename))
+		log.Printf("filePath: %s", filePath)
+		ctx.File(filePath)
+	})
 	return apiv1
 }
 
@@ -426,6 +456,13 @@ func setupSocketServer(r *gin.Engine) *socket.Server {
 }
 
 func main() {
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv == "local" {
+		cwd, _ := os.Getwd()
+		if err := godotenv.Load(path.Join(cwd, ".env")); err != nil {
+			panic(err)
+		}
+	}
 	boot.InitDb()
 
 	go boot.DownloadSDKFileFromS3()
@@ -439,9 +476,8 @@ func main() {
 		log.Println("WS server listening for connections...")
 	}
 
-	appEnv := os.Getenv("APP_ENV")
 	appHost := os.Getenv("APP_HOST")
-	if appEnv == "local" {
+	if apiEnv == "local" {
 		router.Use(cors.Default())
 	} else {
 		cc := cors.DefaultConfig()
@@ -474,11 +510,13 @@ func main() {
 
 	router = maintenanceModeMiddleware(router)
 
+	publicRoutes(router)
+
 	guestAuthRoutes(router)
 
 	stripeWebhookRoute(router)
 
-	authorized := router.Group("/api/v1")
+	authorized := router.Group(apiPrefix)
 	authorized.Use(middlewares.AuthMiddleware)
 	{
 

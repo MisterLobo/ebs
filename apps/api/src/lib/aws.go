@@ -166,7 +166,7 @@ func SchedulerTest() {
 		Name:      aws.String(fmt.Sprintf("schedule_%s", sid)),
 		StartDate: aws.Time(time.Now().Add(5 * time.Minute)),
 		Target: &schedulerTypes.Target{
-			Arn:     aws.String("arn:aws:sns:ap-southeast-1:645972258043:PendingReservations"),
+			Arn:     aws.String(GetTopicArn("PendingReservations")),
 			RoleArn: aws.String(roleArn),
 			Input:   aws.String("received 5 minutes later"),
 			RetryPolicy: &schedulerTypes.RetryPolicy{
@@ -182,6 +182,24 @@ func SchedulerTest() {
 		return
 	}
 	log.Printf("Created schedule at: %s\n", *sched.ScheduleArn)
+}
+
+func SQSProduceMessage(qname string, message string) error {
+	client := AWSGetSQSClient()
+	qurl, err := client.GetQueueUrl(context.TODO(), &sqs.GetQueueUrlInput{
+		QueueName: aws.String(qname),
+	})
+	if err != nil {
+		log.Printf("Failed to retrieve queue URL for %s: %s\n", qname, err.Error())
+		return nil
+	}
+	log.Printf("%s: Sending message...", qname)
+	sent, err := client.SendMessage(context.TODO(), &sqs.SendMessageInput{
+		MessageBody: aws.String(message),
+		QueueUrl:    qurl.QueueUrl,
+	})
+	log.Printf("%s: Sent message with ID: %s\n", qname, *sent.MessageId)
+	return err
 }
 
 func SQSConsumer(qname string) {

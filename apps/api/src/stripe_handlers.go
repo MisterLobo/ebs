@@ -393,7 +393,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 							return err
 						}
 					}
-					appEnv := os.Getenv("APP_ENV")
+					apiEnv := os.Getenv("API_ENV")
 					txnUpdates := &models.Transaction{
 						SourceName:  "PaymentIntent",
 						SourceValue: pi.ID,
@@ -419,7 +419,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					}
 					bPayload, _ := json.Marshal(txnPayload)
 					sPayload := string(bPayload)
-					if appEnv == "test" || appEnv == "prod" {
+					if apiEnv == string(types.Test) || apiEnv == string(types.Production) {
 						cli := lib.AWSGetSQSClient()
 						qurl, err := cli.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{
 							QueueName: aws.String("PaymentTransactionUpdates"),

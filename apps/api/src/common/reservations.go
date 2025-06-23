@@ -5,6 +5,7 @@ import (
 	awslib "ebs/src/lib/aws"
 	"ebs/src/models"
 	"ebs/src/types"
+	"ebs/src/utils"
 	"encoding/json"
 	"log"
 
@@ -101,7 +102,7 @@ func PendingTransactionsConsumer() {
 }
 
 func PaymentTransactionUpdatesConsumer() {
-	qname := "PaymentTransactionUpdates"
+	qname := utils.WithSuffix("PaymentTransactionUpdates")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {

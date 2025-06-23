@@ -48,7 +48,7 @@ func S3DownloadAsset(name string) error {
 		return err
 	}
 	tempdir := os.Getenv("TEMP_DIR")
-	filepath := path.Join(wd, "..", tempdir, fmt.Sprintf("%s.jpeg", name))
+	filepath := path.Join(wd, tempdir, fmt.Sprintf("%s.jpeg", name))
 	file, err := os.Create(filepath)
 	if err != nil {
 		return err

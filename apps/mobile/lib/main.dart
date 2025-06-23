@@ -11,11 +11,15 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 Future main() async {
+  await dotenv.load(fileName: '.env');
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  await dotenv.load(fileName: '.env');
+  var appEnv = dotenv.env['APP_ENV'] ?? '';
+  if (appEnv == 'local') {
+    // await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
+  }
   runApp(const MyApp());
 }
 
@@ -51,7 +55,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'EBS Scanner',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
@@ -92,12 +96,13 @@ class Authenticator {
     final cred = await signInWithGoogle();
     final email = cred.user?.email ?? '';
     var apiHost = dotenv.env['API_HOST'] ?? '';
-    var secret = dotenv.env['API_SECRET'] ?? '';
-    debugPrint('$apiHost $secret');
+    var appEnv = dotenv.env['APP_ENV'] ?? '';
+    final idToken = await cred.user?.getIdToken();
+    debugPrint('idToken: $idToken');
     final response = await http.post(
-      Uri.https(apiHost, '/api/v1/auth/login'),
+      appEnv == 'local' ? Uri.http(apiHost, '/api/v1/auth/login') : Uri.https(apiHost, '/api/v1/auth/login'),
       headers: <String, String>{
-        'x-secret': secret,
+        'Authorization': '$idToken',
         'origin': 'app:mobile',
       },
       body: jsonEncode(<String, String>{
@@ -120,13 +125,12 @@ class Authenticator {
 
   Future<AuthenticatorResponse?> verifyCode(AppState state) async {
     var apiHost = dotenv.env['API_HOST'] ?? '';
-    var secret = dotenv.env['API_SECRET'] ?? '';
+    var appEnv = dotenv.env['APP_ENV'] ?? '';
     final response = await http.post(
-      Uri.https(apiHost, '/api/v1/admission'),
+      appEnv == 'local' ? Uri.http(apiHost, '/api/v1/admission') : Uri.https(apiHost, '/api/v1/admission'),
       headers: <String, String>{
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer ${state.token ?? 'token'}',
-        'x-secret': secret,
         'origin': 'app:mobile',
       },
       body: jsonEncode(<String, String>{

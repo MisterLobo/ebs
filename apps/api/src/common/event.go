@@ -25,7 +25,7 @@ type Plucked struct {
 	UID   string
 }
 
-func subscribeAndSendToTopic(event *models.Event, name string, unsubAfter bool, plucked ...*Plucked) {
+func subscribeAndSendToTopic(event *models.Event, topic string, unsubAfter bool, plucked ...*Plucked) {
 	ctx := context.Background()
 	fcmTokens := make([]string, 0)
 	rd := lib.GetRedisClient()
@@ -34,7 +34,6 @@ func subscribeAndSendToTopic(event *models.Event, name string, unsubAfter bool, 
 		value := rd.JSONGet(ctx, key, "$.token").Val()
 		fcmTokens = append(fcmTokens, value)
 	}
-	topic := name
 	fcm, _ := lib.GetFirebaseMessaging()
 	res, err := fcm.Send(ctx, &messaging.Message{
 		Topic: topic,
@@ -95,8 +94,12 @@ func sendOpenEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToOpen_%d", eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToOpen_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),
@@ -105,6 +108,8 @@ func sendOpenEventNotifications(eventId uint) {
 		To: []string{
 			event.Creator.Email,
 		},
+		ReplyTo: event.Organization.ContactEmail,
+		Bcc:     emails,
 		Body: fmt.Sprintf(`
 			<p>Registration for Event <b>%s</b> is now open</p>
 			<p>What: %s</p>
@@ -182,7 +187,6 @@ func KafkaEventsToOpenConsumer(spayload string) {
 
 func sendClosedEventNotifications(eventId uint) {
 	var event models.Event
-	var emails []string
 	var plucked []*Plucked
 	db := db.GetDb()
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -218,8 +222,12 @@ func sendClosedEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToClose_%d", eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToClose_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),
@@ -288,7 +296,6 @@ func KafkaEventsToCloseConsumer(spayload string) {
 
 func sendCompletedEventNotifications(eventId uint) {
 	var event models.Event
-	var emails []string
 	var plucked []*Plucked
 	db := db.GetDb()
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -324,8 +331,12 @@ func sendCompletedEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToComplete_%d", eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToComplete_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),
@@ -395,7 +406,7 @@ func KafkaEventsToCompleteConsumer(spayload string) {
 }
 
 func EventsToOpenConsumer() {
-	qname := "EventsToOpen"
+	qname := utils.WithSuffix("EventsToOpen")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
@@ -457,7 +468,7 @@ func EventsToOpenConsumer() {
 }
 
 func EventsToCloseConsumer() {
-	qname := "EventsToClose"
+	qname := utils.WithSuffix("EventsToClose")
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
 			log.Printf("[%s]: Received invalid json body. Aborting", qname)
@@ -518,7 +529,7 @@ func EventsToCloseConsumer() {
 }
 
 func EventsToCompleteConsumer() {
-	qname := "EventsToComplete"
+	qname := utils.WithSuffix("EventsToComplete")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
@@ -579,7 +590,7 @@ func EventsToCompleteConsumer() {
 	c.Listen()
 }
 
-func EmailsToSendConsumer(spayload string) {
+func KafkaEmailsToSendConsumer(spayload string) {
 	if !gjson.Valid(spayload) {
 		log.Println("Received invalid json body. Aborting")
 		return
@@ -629,4 +640,60 @@ func EmailsToSendConsumer(spayload string) {
 		}
 		log.Printf("[MAILER]: an email has been sent to %s\n", to)
 	}()
+}
+
+func EmailsToSendConsumer() {
+	qname := utils.WithSuffix("EmailsToSend")
+	log.Printf("%s: Listening for messages...", qname)
+	c := awslib.NewSQSConsumer(qname, func(spayload string) {
+		if !gjson.Valid(spayload) {
+			log.Printf("[%s]: Received invalid json body. Aborting", qname)
+			return
+		}
+		from := gjson.Get(spayload, "from").String()
+		fromName := gjson.Get(spayload, "from-name").String()
+		subject := gjson.Get(spayload, "subject").String()
+		log.Printf("from [%s] with subject: %s\n", from, subject)
+
+		toArr := gjson.Get(spayload, "to").Array()
+		to := make([]string, 0)
+		for _, item := range toArr {
+			to = append(to, item.String())
+		}
+		ccArr := gjson.Get(spayload, "cc").Array()
+		cc := make([]string, 0)
+		for _, item := range ccArr {
+			cc = append(cc, item.String())
+		}
+		bccArr := gjson.Get(spayload, "bcc").Array()
+		bcc := make([]string, 0)
+		for _, item := range bccArr {
+			bcc = append(bcc, item.String())
+		}
+		replyTo := gjson.Get(spayload, "reply-to").String()
+		var body types.JSONB
+		if err := json.Unmarshal([]byte(spayload), &body); err != nil {
+			log.Printf("error deserializing json: %s\n", err.Error())
+			return
+		}
+		go func() {
+			input := &lib.SendMailInput{
+				From:     from,
+				FromName: fromName,
+				To:       to,
+				Cc:       cc,
+				Bcc:      bcc,
+				ReplyTo:  replyTo,
+				Subject:  body["subject"].(string),
+				Body:     body["body"].(string),
+				Html:     body["html"].(bool),
+			}
+			if err := lib.SendMail(input); err != nil {
+				log.Printf("[MAILER] error sending email: %s\n", err.Error())
+				return
+			}
+			log.Printf("[MAILER]: an email has been sent to %s\n", to)
+		}()
+	})
+	c.Listen()
 }

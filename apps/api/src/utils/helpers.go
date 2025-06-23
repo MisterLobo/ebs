@@ -128,14 +128,14 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 			topicName := WithSuffix("EventsToComplete")
 			runsAt := event.DateTime
 			runDate := time.Date(
-				runsAt.UTC().Year(),
-				runsAt.UTC().Month(),
-				runsAt.UTC().Day(),
-				runsAt.UTC().Hour(),
-				runsAt.UTC().Minute(),
+				runsAt.Year(),
+				runsAt.Month(),
+				runsAt.Day(),
+				runsAt.Hour(),
+				runsAt.Minute(),
 				0,
 				0,
-				runsAt.UTC().Location(),
+				runsAt.Location(),
 			)
 			log.Printf("[DateTime] job scheduled at: %s\n", runDate)
 			jobTaskID := uuid.New()
@@ -172,14 +172,14 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 			topicName := WithSuffix("EventsToClose")
 			runsAt := event.Deadline
 			runDate := time.Date(
-				runsAt.UTC().Year(),
-				runsAt.UTC().Month(),
-				runsAt.UTC().Day(),
-				runsAt.UTC().Hour(),
-				runsAt.UTC().Minute(),
+				runsAt.Year(),
+				runsAt.Month(),
+				runsAt.Day(),
+				runsAt.Hour(),
+				runsAt.Minute(),
 				0,
 				0,
-				runsAt.UTC().Location(),
+				runsAt.Location(),
 			)
 			log.Printf("[Deadline] job scheduled at: %s\n", runDate)
 			jobTaskID := uuid.New()
@@ -221,14 +221,14 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 			topicName := WithSuffix("EventsToOpen")
 			runsAt := event.OpensAt
 			runDate := time.Date(
-				runsAt.UTC().Year(),
-				runsAt.UTC().Month(),
-				runsAt.UTC().Day(),
-				runsAt.UTC().Hour(),
-				runsAt.UTC().Minute(),
+				runsAt.Year(),
+				runsAt.Month(),
+				runsAt.Day(),
+				runsAt.Hour(),
+				runsAt.Minute(),
 				0,
 				0,
-				runsAt.UTC().Location(),
+				runsAt.Location(),
 			)
 			log.Printf("[OpensAt] job scheduled at: %s\n", runDate)
 			jobTaskID := uuid.New()

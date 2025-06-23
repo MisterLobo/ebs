@@ -88,7 +88,7 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 			0,
 			deadline.Location(),
 		)
-		log.Printf("dateTime: Local=%s", deadline.String())
+		log.Printf("deadline: Local=%s", deadline.String())
 		event.Deadline = &deadline
 		if params.OpensAt != nil {
 			opensAt, err := time.Parse(config.TIME_PARSE_FORMAT, *params.OpensAt)

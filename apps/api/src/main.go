@@ -456,11 +456,13 @@ func setupSocketServer(r *gin.Engine) *socket.Server {
 }
 
 func main() {
-	cwd, _ := os.Getwd()
-	if err := godotenv.Load(path.Join(cwd, ".env")); err != nil {
-		panic(err)
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv == "local" {
+		cwd, _ := os.Getwd()
+		if err := godotenv.Load(path.Join(cwd, ".env")); err != nil {
+			panic(err)
+		}
 	}
-	log.Println("env:", os.Getenv("API_ENV"))
 	boot.InitDb()
 
 	go boot.DownloadSDKFileFromS3()
@@ -474,7 +476,6 @@ func main() {
 		log.Println("WS server listening for connections...")
 	}
 
-	apiEnv := os.Getenv("API_ENV")
 	appHost := os.Getenv("APP_HOST")
 	if apiEnv == "local" {
 		router.Use(cors.Default())

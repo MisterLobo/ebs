@@ -25,7 +25,7 @@ type Plucked struct {
 	UID   string
 }
 
-func subscribeAndSendToTopic(event *models.Event, name string, unsubAfter bool, plucked ...*Plucked) {
+func subscribeAndSendToTopic(event *models.Event, topic string, unsubAfter bool, plucked ...*Plucked) {
 	ctx := context.Background()
 	fcmTokens := make([]string, 0)
 	rd := lib.GetRedisClient()
@@ -34,7 +34,6 @@ func subscribeAndSendToTopic(event *models.Event, name string, unsubAfter bool, 
 		value := rd.JSONGet(ctx, key, "$.token").Val()
 		fcmTokens = append(fcmTokens, value)
 	}
-	topic := name
 	fcm, _ := lib.GetFirebaseMessaging()
 	res, err := fcm.Send(ctx, &messaging.Message{
 		Topic: topic,
@@ -95,12 +94,12 @@ func sendOpenEventNotifications(eventId uint) {
 		return
 	}
 
-	apiEnv := os.Getenv("API_ENV")
-	if apiEnv != "production" {
-		apiEnv = fmt.Sprintf("_%s", apiEnv)
-	}
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToOpen%s_%d", apiEnv, eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToOpen_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),
@@ -109,6 +108,8 @@ func sendOpenEventNotifications(eventId uint) {
 		To: []string{
 			event.Creator.Email,
 		},
+		ReplyTo: event.Organization.ContactEmail,
+		Bcc:     emails,
 		Body: fmt.Sprintf(`
 			<p>Registration for Event <b>%s</b> is now open</p>
 			<p>What: %s</p>
@@ -186,7 +187,6 @@ func KafkaEventsToOpenConsumer(spayload string) {
 
 func sendClosedEventNotifications(eventId uint) {
 	var event models.Event
-	var emails []string
 	var plucked []*Plucked
 	db := db.GetDb()
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -222,12 +222,12 @@ func sendClosedEventNotifications(eventId uint) {
 		return
 	}
 
-	apiEnv := os.Getenv("API_ENV")
-	if apiEnv != "production" {
-		apiEnv = fmt.Sprintf("_%s", apiEnv)
-	}
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToClose%s_%d", apiEnv, eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToClose_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),
@@ -296,7 +296,6 @@ func KafkaEventsToCloseConsumer(spayload string) {
 
 func sendCompletedEventNotifications(eventId uint) {
 	var event models.Event
-	var emails []string
 	var plucked []*Plucked
 	db := db.GetDb()
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -332,12 +331,12 @@ func sendCompletedEventNotifications(eventId uint) {
 		return
 	}
 
-	apiEnv := os.Getenv("API_ENV")
-	if apiEnv != "production" {
-		apiEnv = fmt.Sprintf("_%s", apiEnv)
-	}
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToComplete%s_%d", apiEnv, eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToComplete_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),

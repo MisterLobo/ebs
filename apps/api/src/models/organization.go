@@ -40,7 +40,7 @@ type Organization struct {
 
 func (o *Organization) AfterCreate(tx *gorm.DB) error {
 	newSlug := slug.Make(fmt.Sprintf("%s-%d", o.Name, o.ID))
-	if err := tx.Model(o).Update("slug", newSlug).Error; err != nil {
+	if err := tx.Model(&Organization{}).Where("id = ?", o.ID).Update("slug", newSlug).Error; err != nil {
 		return err
 	}
 	return nil

@@ -78,6 +78,6 @@ keep_scroll = true
 
 [proxy]
 # Enable live-reloading on the browser.
-enabled = true
+enabled = false
 proxy_port = 8090
 app_port = 9090

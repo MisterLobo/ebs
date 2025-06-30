@@ -776,8 +776,8 @@ func (s *TestSuite) TestEvents() {
 			Name:         "test",
 			Title:        "test event",
 			Location:     "location",
-			DateTime:     "2025-07-31 22:00:00 +08:00",
-			Deadline:     "2025-07-31 10:00:00 +08:00",
+			DateTime:     "2225-07-31 22:00:00 +08:00",
+			Deadline:     "2225-07-31 10:00:00 +08:00",
 			Organization: *s.OrgId,
 		}
 		rbytes, err := json.Marshal(&reqBody)
@@ -798,16 +798,28 @@ func (s *TestSuite) TestEvents() {
 		id := gjson.Get(sjson, "id").Uint()
 
 		assert.NotZero(s.T(), id)
+
+		var del models.Event
+		db := db.GetDb()
+		db.
+			Unscoped().
+			Model(&models.Event{}).
+			Where(&models.Event{
+				Name:        "test",
+				Title:       "test event",
+				OrganizerID: *s.OrgId,
+			}).
+			Delete(&del)
 	})
 }
 
 func (s *TestSuite) TestTickets() {
 	db := db.GetDb()
 
-	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 22:00:00 +08:00")
-	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 10:00:00 +08:00")
+	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2225-07-31 22:00:00 +08:00")
+	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2225-07-31 10:00:00 +08:00")
 	event := &models.Event{
-		ID:       1,
+		ID:       100,
 		Name:     "test",
 		Title:    "test event",
 		Location: "location",

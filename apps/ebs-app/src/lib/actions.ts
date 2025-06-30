@@ -1,7 +1,7 @@
 'use server'
 
 import { cookies } from 'next/headers'
-import { Admission, Booking, Event, EventQueryFilters, NewEventRequestPayload, NewOrganizationRequestPayload, NewTicketRequestPayload, Organization, Reservation, Ticket, Transaction, User } from './types'
+import { Admission, Booking, Country, Event, EventQueryFilters, Geocoded, MFADevice, NewEventRequestPayload, NewOrganizationRequestPayload, NewTicketRequestPayload, Organization, Reservation, Ticket, Transaction, User } from './types'
 import { notFound, redirect } from 'next/navigation'
 import { TurnstileServerValidationResponse } from '@marsidev/react-turnstile'
 import { Stripe } from 'stripe'
@@ -101,7 +101,14 @@ export async function switchOrganization(id: number) {
   }
   const { access_token } = await response.json()
   if (access_token) {
-    $cookies.set('token', access_token)
+    /* $cookies.set('token', access_token, {
+      secure: process.env.APP_ENV !== 'local',
+      httpOnly: true,
+      path: '/',
+      sameSite: 'lax',
+      domain: process.env.APP_HOST,
+      expires: 60 * 60 * 24, //
+    }) */
     return true
   }
   return false
@@ -388,7 +395,8 @@ export async function registerUser(email: string, idToken: string) {
   }
 }
 
-export async function loginUser(email: string, idToken: string) {
+export async function loginUser(email: string, idToken: string): Promise<{ ok: boolean, publicKey?: any, error?: string, status: number }> {
+  console.log(`${process.env.API_HOST}/auth/login`)
   const response = await fetch(`${process.env.API_HOST}/auth/login`, {
     headers: {
       'Authorization': idToken,
@@ -398,12 +406,26 @@ export async function loginUser(email: string, idToken: string) {
       email,
     }),
   })
+  if (response.headers.has('x-authenticate')) {
+    const data = await loginPasskeyMFA(email)
+    return {
+      ...data,
+      status: response.status,
+    }
+  }
   const { token, error } = await response.json()
   if (token) {
     const $cookies = await cookies()
-    $cookies.set('token', token)
+    $cookies.set('token', token, {
+      secure: process.env.APP_ENV !== 'local',
+      path: '/',
+      sameSite: 'lax',
+      domain: process.env.APP_HOST,
+      expires: Date.now() + 86_400_000,
+    })
   }
   return {
+    ok: false,
     error,
     status: response.status,
   }
@@ -1092,4 +1114,229 @@ export async function sendFCMMessage(topic: string) {
   if (response.status !== 200) {
     console.error('Something went wrong')
   }
+}
+
+export async function geocode(lat: number, long: number): Promise<Geocoded> {
+  const url = new URL('https://maps.googleapis.com/maps/api/timezone/json')
+  url.searchParams.set('location', `${lat},${long}`)
+  url.searchParams.set('timestamp', (Date.now()/1e3).toString())
+  url.searchParams.set('key', process.env.GEOTZ_API_KEY as string)
+  const response = await fetch(url)
+  const data = await response.json()
+  return data
+}
+
+export async function placeInfo(lat: number, long: number): Promise<any> {
+  const url = new URL('https://maps.googleapis.com/maps/api/timezone/json')
+  url.searchParams.set('location', `${lat},${long}`)
+  url.searchParams.set('timestamp', (Date.now()/1e3).toString())
+  url.searchParams.set('key', process.env.GEOTZ_API_KEY as string)
+  const response = await fetch(url)
+  const data = await response.json()
+  return data
+}
+
+export async function listCountries(): Promise<Country[]> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const response = await fetch(`${process.env.API_HOST}/countries`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status !== 200) {
+    return []
+  }
+  const { countries } = await response.json()
+  return countries
+}
+
+export async function registerPasskeyMFA(creds: { [key:string]: any } | null, step: 'start' | 'finish' = 'start') {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const url = new URL(`${process.env.API_HOST}/accounts/passkey/register/${step}`)
+  let body = JSON.stringify(creds)
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+    body,
+  })
+  if (response.status !== 200) {
+    return false
+  }
+  if (step === 'start') {
+    const publicKey = await response.json()
+    if (!publicKey) {
+      return false
+    }
+    publicKey.challenge = Uint8Array.from(Buffer.from(publicKey.challenge, 'base64url'))
+    publicKey.user.id = Uint8Array.from(Buffer.from(publicKey.user.id, 'base64url'))
+    return publicKey
+  }
+  return true
+}
+export async function loginPasskeyMFA(email: string, creds?: { [key:string]: any } | null, step: 'start' | 'finish' = 'start'): Promise<{ ok: boolean, publicKey?: any, error?: string }> {
+  const url = new URL(`${process.env.API_HOST}/passkey/login/${step}`)
+  const body: Record<string, any> = creds ?? {}
+  if (step === 'start') {
+    body.email = email
+  } else if (step === 'finish') {
+    url.searchParams.set('email', email)
+  }
+  const requestInit = {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+    body: JSON.stringify(body),
+  } as RequestInit
+  const response = await fetch(url, requestInit)
+  if (response.status === 401) {
+    const { error } = await response.json()
+    return { ok: false, error }
+  }
+  if (response.status !== 200) {
+    return { ok: false }
+  }
+  const { token, publicKey, error } = await response.json()
+  if (error) {
+    return { ok: false, error }
+  }
+  if (step === 'start') {
+    if (!publicKey) {
+      return { ok: false, error }
+    }
+    const challenge = Uint8Array.from(Buffer.from(publicKey.challenge, 'base64url'))
+    const allowCredentials = Array.from(publicKey.allowCredentials).map((ac: any) => {
+      const id = Uint8Array.from(Buffer.from(ac?.id, 'base64url'))
+      ac.id = id
+      return ac
+    })
+    publicKey.challenge = challenge
+    publicKey.allowCredentials = allowCredentials
+    return { ok: true, publicKey }
+  } else if (step === 'finish') {
+    if (token) {
+      const secure = process.env.APP_HOST?.startsWith('https://') || process.env.APP_ENV !== 'local'
+      const $cookies = await cookies()
+      $cookies.set('token', token, {
+        secure,
+        httpOnly: true,
+        path: '/',
+        sameSite: 'lax',
+        domain: process.env.APP_DOMAIN,
+        expires: Date.now()+(3600*1e3),
+      })
+      return { ok: true }
+    }
+  }
+  return { ok: false }
+}
+export async function getMFADevices(): Promise<MFADevice[]> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const url = new URL(`${process.env.API_HOST}/accounts/devices`)
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status !== 200) {
+    return []
+  }
+  const { data } = await response.json()
+  return data
+}
+export async function revokeMFADevice(name: string): Promise<boolean> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const url = new URL(`${process.env.API_HOST}/accounts/devices/revoke`)
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'PUT',
+    body: JSON.stringify({
+      name,
+    })
+  })
+  if (response.status !== 200) {
+    return false
+  }
+  return true
+}
+export async function requestVerificationCode(email: string): Promise<boolean> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const url = new URL(`${process.env.API_HOST}/passkey/login/request_code`)
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'POST',
+    body: JSON.stringify({ email })
+  })
+  if (response.status !== 200) {
+    return false
+  }
+  return true
+}
+export async function verifyVerificationCode(email: string, code: string) {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const url = new URL(`${process.env.API_HOST}/passkey/login/verify_code`)
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'POST',
+    body: JSON.stringify({ email, code })
+  })
+  if (response.status !== 200) {
+    return false
+  }
+  return true
+}
+
+export async function encodeBase64url(s: string): Promise<string> {
+  return Buffer.from(s).toString('base64url')
+}
+
+export async function connectCalendar(redirect: string): Promise<string | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const reqUrl = new URL(`${process.env.API_HOST}/accounts/calendar/connect`)
+  const response = await fetch(reqUrl, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    method: 'POST',
+    body: JSON.stringify({
+      redirect: `${process.env.APP_HOST}${redirect}`,
+    })
+  })
+  if (response.status !== 200) {
+    return null
+  }
+  const { url } = await response.json()
+  return url
+}
+
+export async function getCalendar(id: number): Promise<string | null> {
+  const $cookies = await cookies()
+  const token = $cookies.get('token')?.value
+  const reqUrl = new URL(`${process.env.API_HOST}/accounts/${id}/calendar?type=org`)
+  const response = await fetch(reqUrl, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (response.status !== 200) {
+    return null
+  }
+  const { url } = await response.json()
+  return url
 }

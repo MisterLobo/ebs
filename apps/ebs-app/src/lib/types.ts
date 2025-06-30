@@ -13,6 +13,14 @@ export type NewOrganizationRequestPayload = {
   email?: string,
 }
 
+export type Geocoded = {
+  dstOffset?: number,
+  rawOffset?: number,
+  status: string,
+  timeZoneId?: string,
+  timeZoneName?: string,
+}
+
 export type NewEventRequestPayload = {
   name: string,
   title: string,
@@ -26,6 +34,9 @@ export type NewEventRequestPayload = {
   publish?: boolean,
   opens_at?: string,
   mode?: 'default' | 'scheduled',
+  timezone?: string,
+  type: string,
+  category: string,
 }
 
 export type NewTicketRequestPayload = {
@@ -41,12 +52,17 @@ export type Resource = {
   resource_id?: string,
 }
 
+export type MFADevice = {
+  name: string,
+}
+
 export type User = {
   id?: number,
   email?: string,
   name?: string,
   role?: string,
   uid?: string,
+  phone?: string,
   email_verified?: boolean,
   phone_verified?: boolean,
   verified_at?: string,
@@ -54,6 +70,9 @@ export type User = {
   subscription_id?: string,
   customer_id?: string,
   metadata?: Metadata,
+  timezone?: string,
+  devices?: MFADevice[],
+  status?: string,
 }
 
 export type Organization = {
@@ -71,6 +90,7 @@ export type Organization = {
   payment_verified?: boolean,
   slug?: string,
   about?: string,
+  website?: string,
 
   events?: Event[],
   owner?: User,
@@ -92,6 +112,7 @@ export type Event = {
   deadline?: string,
   mode?: 'default' | 'scheduled',
   organization?: Organization,
+  timezone?: string,
 } & Timestamps & Resource
 
 export type Ticket = {
@@ -196,3 +217,16 @@ export type Waitlist = {
   event_id?: number,
   created_at?: string,
 } & Timestamps & Resource
+
+export type Country = {
+  cca2?: string,
+  cca3?: string,
+  flag?: string,
+  name?: {
+    common?: string,
+    official?: string,
+    nativeName?: {[key:string]: { official: string, common: string }},
+  },
+  timezones?: string[],
+  [key:string]: any,
+}

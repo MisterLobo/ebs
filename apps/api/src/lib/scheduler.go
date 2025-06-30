@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"ebs/src/config"
 	"ebs/src/types"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,10 @@ const (
 )
 
 var scheduler gocron.Scheduler
+
+func NewScheduler(s gocron.Scheduler) {
+	scheduler = s
+}
 
 func GetScheduler() (gocron.Scheduler, error) {
 	if scheduler != nil {
@@ -185,7 +190,7 @@ func (l *LocalScheduler) CreateScheduleWithStartDate(ctx context.Context, s time
 	j, err := in.NewJob(
 		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(s)),
 		gocron.NewTask(func(ctx context.Context, p types.JSONB) {
-			log.Println("[LOCALSCHEDULER] Running scheduled task...")
+			log.Printf("[%s] Running scheduled task...\n", l.Name())
 			KafkaTaskHandlerFunc(ctx, &p)
 		}, ctx, p),
 	)
@@ -193,8 +198,8 @@ func (l *LocalScheduler) CreateScheduleWithStartDate(ctx context.Context, s time
 		log.Printf("Error creating job: %s\n", err.Error())
 		return nil, err
 	}
-	sRunsAt := s.Format("2006-01-02T15:04:05")
-	log.Printf("[LOCALSCHEDULER] New Job scheduled on: %s %s\n", j.ID().String(), sRunsAt)
+	sRunsAt := s.Format(config.TIME_PARSE_FORMAT)
+	log.Printf("[%s] New Job scheduled on: %s %s\n", l.Name(), j.ID().String(), sRunsAt)
 	jid := j.ID()
 	return &jid, nil
 }
@@ -213,7 +218,7 @@ func NewLocalScheduler() *LocalScheduler {
 
 // CreateScheduler returns either an instance of LocalScheduler or EventBridgeScheduler based on the app environment value
 func CreateScheduler() Scheduler {
-	env := os.Getenv("API_ENV")
+	env := config.API_ENV
 	if env != "local" {
 		ebs := NewAwsScheduler()
 		return ebs

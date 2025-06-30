@@ -43,6 +43,9 @@ func InitDb() *gorm.DB {
 		&models.RolePermission{},
 		&models.Rating{},
 		&models.Notification{},
+		&models.Credential{},
+		&models.Token{},
+		&models.Account{},
 	)
 	if err != nil {
 		log.Fatalf("error migration: %s", err.Error())
@@ -105,33 +108,36 @@ func InitBroker() {
 			common.SNSSubscribes()
 		}()
 	} else {
+		emailQueue := os.Getenv("EMAIL_QUEUE")
+		lib.KafkaCreateTopics(
+			utils.WithSuffix("Retry"),
+			utils.WithSuffix("EventsToOpen"),
+			utils.WithSuffix("EventsToClose"),
+			utils.WithSuffix("EventsToComplete"),
+			utils.WithSuffix("PendingTransactions"),
+			utils.WithSuffix("PaymentTransactionUpdates"),
+			utils.WithSuffix(emailQueue),
+		)
+		var retryConsumer types.Handler = common.KafkaRetryConsumer
+		go lib.KafkaConsumer("retry", utils.WithSuffix("Retry"), &retryConsumer)
+
 		var eventsToOpenConsumer types.Handler = common.KafkaEventsToOpenConsumer
-		go lib.KafkaConsumer("events", "EventsToOpen", &eventsToOpenConsumer)
+		go lib.KafkaConsumer("events", utils.WithSuffix("EventsToOpen"), &eventsToOpenConsumer)
 
 		var eventsToCloseConsumer types.Handler = common.KafkaEventsToCloseConsumer
-		go lib.KafkaConsumer("events", "EventsToClose", &eventsToCloseConsumer)
+		go lib.KafkaConsumer("events", utils.WithSuffix("EventsToClose"), &eventsToCloseConsumer)
 
 		var eventsToCompleteConsumer types.Handler = common.KafkaEventsToCompleteConsumer
-		go lib.KafkaConsumer("events", "EventsToComplete", &eventsToCompleteConsumer)
+		go lib.KafkaConsumer("events", utils.WithSuffix("EventsToComplete"), &eventsToCompleteConsumer)
 
-		emailQueue := os.Getenv("EMAIL_QUEUE")
 		var emailsToSendConsumer types.Handler = common.KafkaEmailsToSendConsumer
-		go lib.KafkaConsumer("emails", emailQueue, &emailsToSendConsumer)
+		go lib.KafkaConsumer("emails", utils.WithSuffix(emailQueue), &emailsToSendConsumer)
 
 		var pendingTxnConsumer types.Handler = common.KafkaPendingTransactionsConsumer
-		go lib.KafkaConsumer("transactions", "PendingTransactions", &pendingTxnConsumer)
+		go lib.KafkaConsumer("transactions", utils.WithSuffix("PendingTransactions"), &pendingTxnConsumer)
 
 		var kafkaPaymentTransactionUpdatesConsumer types.Handler = common.KafkaPaymentTransactionUpdatesConsumer
-		go lib.KafkaConsumer("payments", "PaymentTransactionUpdates", &kafkaPaymentTransactionUpdatesConsumer)
-
-		go lib.KafkaCreateTopics(
-			"EventsToOpen",
-			"EventsToClose",
-			"EventsToComplete",
-			"PendingTransactions",
-			"PaymentTransactionUpdates",
-			emailQueue,
-		)
+		go lib.KafkaConsumer("payments", utils.WithSuffix("PaymentTransactionUpdates"), &kafkaPaymentTransactionUpdatesConsumer)
 	}
 }
 
@@ -311,42 +317,54 @@ func StatusUpdateExpiredBookings() {
 	}
 }
 
-func DownloadSDKFileFromS3() {
+func DownloadSDKFileFromS3() error {
 	filename := "admin-sdk-credentials.json"
 	secretsPath := os.Getenv("SECRETS_DIR")
+	secretsBucket := os.Getenv("S3_SECRETS_BUCKET")
 	sdkFilePath := path.Join(secretsPath, filename)
-	_, err := os.Stat(sdkFilePath)
-	if errors.Is(err, os.ErrNotExist) {
-		log.Println("File not found. Downloading...")
+	return DownloadFileFromS3(filename, sdkFilePath, secretsBucket, true)
+}
+func DownloadServiceKeyFromS3() error {
+	filename := "client_secret.json"
+	secretsPath := os.Getenv("SECRETS_DIR")
+	secretsBucket := os.Getenv("S3_SECRETS_BUCKET")
+	sdkFilePath := path.Join(secretsPath, filename)
+	return DownloadFileFromS3(filename, sdkFilePath, secretsBucket, true)
+}
+func DownloadFileFromS3(filename, localpath, bucket string, overwriteIfExists bool) error {
+	_, err := os.Stat(localpath)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && overwriteIfExists) {
+		log.Printf("Downloading file key=%s bucket=%s\n", filename, bucket)
 		client := lib.AWSGetS3Client()
 		adminSdkObjectKey := filename
-		secretsBucket := os.Getenv("S3_SECRETS_BUCKET")
 		object, err := client.GetObject(context.Background(), &s3.GetObjectInput{
-			Bucket: aws.String(secretsBucket),
+			Bucket: aws.String(bucket),
 			Key:    aws.String(adminSdkObjectKey),
 		})
 		if err != nil {
 			log.Printf("[S3] Error retrieving object: %s\n", err.Error())
-			return
+			return err
 		}
 		defer object.Body.Close()
-		file, err := os.Create(sdkFilePath)
+		file, err := os.Create(filename)
 		if err != nil {
 			log.Printf("Could not create file %s: %s\n", filename, err.Error())
-			return
+			return err
 		}
 		defer file.Close()
 		body, err := io.ReadAll(object.Body)
 		if err != nil {
 			log.Printf("Couldn't read object body from %s: %s\n", filename, err.Error())
-			return
+			return err
 		}
 		_, err = file.Write(body)
 		if err != nil {
 			log.Printf("Error writing to file: %s\n", err.Error())
-			return
+			return err
 		}
 		log.Println("File has been written")
+		return nil
 	}
 	log.Println("File exists!")
+	return nil
 }

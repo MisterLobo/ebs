@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"ebs/src/config"
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
 	"ebs/src/types"
+	"ebs/src/utils"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -53,6 +55,8 @@ type TestSuite struct {
 	FirebaseApp  *firebase.App
 	StripeClient *stripe.Client
 	RedisClient  *redis.Client
+	OrgId        *uint
+	EventId      *uint
 }
 
 type TestUserModel struct {
@@ -161,6 +165,13 @@ func deleteAllTables() {
 	TRUNCATE event_subscriptions CASCADE;
 	TRUNCATE admissions CASCADE;
 	TRUNCATE job_tasks CASCADE;
+	TRUNCATE teams CASCADE;
+	TRUNCATE team_members CASCADE;
+	TRUNCATE ratings CASCADE;
+	TRUNCATE notifications CASCADE;
+	TRUNCATE credentials CASCADE;
+	TRUNCATE tokens CASCADE;
+	TRUNCATE accounts CASCADE;
 	`)
 }
 
@@ -197,8 +208,10 @@ func createUser(s *TestSuite, email string, uid string) (*models.User, error) {
 		UID:   uid,
 	}
 	org := models.Organization{
-		Name:         "test",
-		ContactEmail: email,
+		ID:              1,
+		Name:            "test",
+		ContactEmail:    email,
+		StripeAccountID: stripe.String("acct_test"),
 	}
 
 	db := db.GetDb()
@@ -214,6 +227,7 @@ func createUser(s *TestSuite, email string, uid string) (*models.User, error) {
 			return err
 		}
 		user.ActiveOrg = org.ID
+		s.OrgId = &org.ID
 		if err := tx.Where(&user).Updates(&user).Error; err != nil {
 			return err
 		}
@@ -268,6 +282,9 @@ func deleteTestUser(s *TestSuite, email string, fuser bool) error {
 }
 
 func (s *TestSuite) SetupSuite() {
+	os.Setenv("APP_HOST", "http://localhost:3000")
+	os.Setenv("STRIPE_SECRET_KEY", "secret")
+	os.Setenv("API_ENV", "local")
 	os.Setenv("API_SECRET", "secret")
 	os.Setenv("JWT_SECRET", "secret")
 	os.Setenv("FIREBASE_AUTH_EMULATOR_HOST", "127.0.0.1:9099")
@@ -279,7 +296,7 @@ func (s *TestSuite) SetupSuite() {
 		v.RegisterValidation("betweenfields", betweenfields)
 	}
 
-	d, mock := NewMockDB()
+	d, mock := newMockDB()
 	db.NewDB(d)
 	s.DB = d
 
@@ -302,6 +319,9 @@ func (s *TestSuite) SetupSuite() {
 		&models.RolePermission{},
 		&models.Rating{},
 		&models.Notification{},
+		&models.Credential{},
+		&models.Token{},
+		&models.Account{},
 	)
 	if err != nil {
 		log.Fatalf("error migration: %s", err.Error())
@@ -315,6 +335,11 @@ func (s *TestSuite) SetupSuite() {
 	`).Error; err != nil {
 		log.Printf("Error creating FUNCTION set_tenant: %s\n", err.Error())
 	}
+	/* ctrl := gomock.NewController(s.T())
+	ss := gocronmocks.NewMockScheduler(ctrl)
+	assert.NotNil(s.T(), ss)
+	lib.NewScheduler(ss)
+	boot.InitScheduler() */
 
 	// Mock Redis API
 	rc, rmock := redismock.NewClientMock()
@@ -336,8 +361,6 @@ func (s *TestSuite) SetupSuite() {
 	))
 	s.StripeClient = sc
 	lib.NewStripeClient(sc)
-	gac := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-	log.Printf("GAC: %d, %s\n", len(gac), gac)
 
 	// Mock Firebase app with emulator suite
 	app, _ := firebase.NewApp(context.Background(), &firebase.Config{
@@ -377,7 +400,7 @@ func (s *TestSuite) TearDownTest() {
 	deleteTestUser(s, email, true)
 }
 
-func NewMockDB() (*gorm.DB, sqlmock.Sqlmock) {
+func newMockDB() (*gorm.DB, sqlmock.Sqlmock) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		log.Fatalf("An error '%s' was not expected when opening a stub database connection", err)
@@ -432,6 +455,9 @@ func newKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
 		log.Fatalf("error generating private key: %s\n", err.Error())
+	}
+	if err := privateKey.Validate(); err != nil {
+		log.Fatalf("private key did not pass validation: %s\n", err.Error())
 	}
 	privDER := x509.MarshalPKCS1PrivateKey(privateKey)
 	privBlock := pem.Block{
@@ -533,7 +559,7 @@ func (s *TestSuite) TestUserNotFound() {
 	s.UID = &user.UID
 
 	jwt, err := newJwt(user.UID)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	sbody, _ := json.Marshal(&jbody)
 	loginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(sbody)))
 	loginReq.Header.Set("Authorization", jwt)
@@ -550,7 +576,7 @@ func (s *TestSuite) TestLogin() {
 		"email": email,
 	}
 	jwt, err := newJwt(*s.UID)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	sbody, _ := json.Marshal(&jbody)
 	loginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(sbody)))
 	loginReq.Header.Set("Authorization", jwt)
@@ -559,13 +585,13 @@ func (s *TestSuite) TestLogin() {
 	assert.Equal(s.T(), 200, w.Code)
 
 	rbytes, err := io.ReadAll(w.Body)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	assert.Greaterf(s.T(), len(rbytes), 0, "Empty response")
 	var response struct {
 		Token *string `json:"token"`
 	}
 	err = json.Unmarshal(rbytes, &response)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	assert.NotNil(s.T(), response.Token)
 	s.Token = response.Token
 }
@@ -584,7 +610,7 @@ func (s *TestSuite) TestRegisterUser() {
 	sbody, _ := json.Marshal(&jbody)
 
 	token, err := newJwt(*s.UID)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	strBody := string(sbody)
 	log.Printf("strbody: %s\n", strBody)
 	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(strBody))
@@ -598,7 +624,7 @@ func (s *TestSuite) TestRegisterUser() {
 		UID string `json:"uid"`
 	}
 	err = json.Unmarshal(bres, &response)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	assert.NotEmpty(s.T(), response.UID)
 	assert.NotNil(s.T(), response.UID)
 }
@@ -606,7 +632,7 @@ func (s *TestSuite) TestRegisterUser() {
 func (s *TestSuite) TestRegisterAnotherUser() {
 	email := "anotheruser@company.test"
 	_, err := createFirebaseUser(s, email)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	defer deleteTestUser(s, email, true)
 
 	router := setupRouter()
@@ -620,7 +646,7 @@ func (s *TestSuite) TestRegisterAnotherUser() {
 	sbody, _ := json.Marshal(&jbody)
 
 	token, err := newJwt(*s.UID)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
 	registerReq.Header.Set("Authorization", token)
 	router.ServeHTTP(w, registerReq)
@@ -632,6 +658,42 @@ func (s *TestSuite) TestRegisterAnotherUser() {
 	assert.Equal(s.T(), 200, w.Code)
 	assert.NotEmpty(s.T(), uid)
 	assert.NotNil(s.T(), uid)
+}
+
+func (s *TestSuite) TestRegisterMultipleUsers() {
+	router := setupRouter()
+	guestAuthRoutes(router)
+
+	const USER_COUNT int = 20
+	for i := range USER_COUNT {
+		email := fmt.Sprintf("anotheruser+%d@company.test", i)
+		_, err := createFirebaseUser(s, email)
+		assert.NoError(s.T(), err)
+
+		w := httptest.NewRecorder()
+
+		jbody := map[string]any{
+			"email": email,
+		}
+		sbody, _ := json.Marshal(&jbody)
+
+		token, err := newJwt(*s.UID)
+		assert.NoError(s.T(), err)
+		go func() {
+			defer deleteTestUser(s, email, true)
+			registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
+			registerReq.Header.Set("Authorization", token)
+			router.ServeHTTP(w, registerReq)
+			bres, _ := io.ReadAll(w.Body)
+			sres := string(bres)
+			errString := gjson.Get(sres, "error").String()
+			uid := gjson.Get(sres, "uid").String()
+			assert.Equal(s.T(), "", errString)
+			assert.Equal(s.T(), 200, w.Code)
+			assert.NotEmpty(s.T(), uid)
+			assert.NotNil(s.T(), uid)
+		}()
+	}
 }
 
 func (s *TestSuite) TestRegisterWithoutFirebaseAccount() {
@@ -646,7 +708,7 @@ func (s *TestSuite) TestRegisterWithoutFirebaseAccount() {
 	sbody, _ := json.Marshal(&jbody)
 
 	token, err := newJwt(*s.UID)
-	assert.Nil(s.T(), err)
+	assert.NoError(s.T(), err)
 	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
 	registerReq.Header.Set("Authorization", token)
 	router.ServeHTTP(w, registerReq)
@@ -658,8 +720,8 @@ func (s *TestSuite) TestRegisterWithoutFirebaseAccount() {
 }
 
 func (s *TestSuite) TestEvents() {
-	token, err := generateJWT(email, *s.UserId, 1)
-	assert.Nil(s.T(), err)
+	token, err := utils.GenerateJWT(email, *s.UserId, 1)
+	assert.NoError(s.T(), err)
 
 	router := setupRouter()
 	apiv1 := apiv1Group(router)
@@ -692,20 +754,302 @@ func (s *TestSuite) TestEvents() {
 			Title: "test event",
 		}
 		rbytes, err := json.Marshal(&reqBody)
-		assert.Nil(s.T(), err)
+		assert.NoError(s.T(), err)
 		eventReq, err := http.NewRequest("POST", "/api/v1/events", strings.NewReader(string(rbytes)))
-		assert.Nil(s.T(), err)
+		assert.NoError(s.T(), err)
 		eventReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		router.ServeHTTP(w, eventReq)
 
 		assert.Equal(s.T(), 400, w.Code)
 
 		rbytes, err = io.ReadAll(w.Body)
-		assert.Nil(s.T(), err)
+		assert.NoError(s.T(), err)
 		sjson := string(rbytes)
 		errMsg := gjson.Get(sjson, "error").String()
 
 		assert.NotNil(s.T(), errMsg)
+	})
+
+	s.Run("Should create the event", func() {
+		w := httptest.NewRecorder()
+		reqBody := types.CreateEventRequestBody{
+			Name:         "test",
+			Title:        "test event",
+			Location:     "location",
+			DateTime:     "2025-07-31 22:00:00 +08:00",
+			Deadline:     "2025-07-31 10:00:00 +08:00",
+			Organization: *s.OrgId,
+		}
+		rbytes, err := json.Marshal(&reqBody)
+		assert.NoError(s.T(), err)
+		eventReq, err := http.NewRequest("POST", "/api/v1/events", strings.NewReader(string(rbytes)))
+		assert.NoError(s.T(), err)
+		eventReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		router.ServeHTTP(w, eventReq)
+
+		assert.Equal(s.T(), 201, w.Code)
+
+		rbytes, err = io.ReadAll(w.Body)
+		assert.NoError(s.T(), err)
+		sjson := string(rbytes)
+		errorString := gjson.Get(sjson, "error").String()
+		assert.Empty(s.T(), errorString)
+
+		id := gjson.Get(sjson, "id").Uint()
+
+		assert.NotZero(s.T(), id)
+	})
+}
+
+func (s *TestSuite) TestTickets() {
+	db := db.GetDb()
+
+	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 22:00:00 +08:00")
+	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 10:00:00 +08:00")
+	event := &models.Event{
+		ID:       1,
+		Name:     "test",
+		Title:    "test event",
+		Location: "location",
+		DateTime: &dt,
+		Deadline: &dl,
+		Organization: models.Organization{
+			Name:            "org",
+			OwnerID:         *s.UserId,
+			StripeAccountID: stripe.String("acct_test"),
+			Type:            "standard",
+		},
+	}
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(event).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	assert.NoError(s.T(), err)
+
+	token, err := utils.GenerateJWT(email, *s.UserId, event.OrganizerID)
+	assert.NoError(s.T(), err)
+
+	router := setupRouter()
+	apiv1 := apiv1Group(router)
+	apiv1.Use(authMiddleware)
+	ticketHandlers(apiv1)
+
+	s.Run("Should create new Ticket for Event", func() {
+		reqBody := &types.CreateTicketRequestBody{
+			Tier:     "A",
+			Currency: "usd",
+			Price:    10,
+			EventID:  event.ID,
+			Limit:    15,
+			Type:     "standard",
+		}
+		w := httptest.NewRecorder()
+		rbytes, err := json.Marshal(reqBody)
+		assert.NoError(s.T(), err)
+		eventReq, err := http.NewRequest("POST", "/api/v1/tickets", strings.NewReader(string(rbytes)))
+		assert.NoError(s.T(), err)
+		eventReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		router.ServeHTTP(w, eventReq)
+
+		assert.Equal(s.T(), 201, w.Code)
+
+		rbytes, err = io.ReadAll(w.Body)
+		assert.NoError(s.T(), err)
+		sjson := string(rbytes)
+		errorString := gjson.Get(sjson, "error").String()
+		assert.Empty(s.T(), errorString)
+
+		id := gjson.Get(sjson, "id").Uint()
+
+		assert.NotZero(s.T(), id)
+	})
+}
+
+func (s *TestSuite) TestBookings() {
+	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 22:00:00 +08:00")
+	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 10:00:00 +08:00")
+	ticket := &models.Ticket{
+		ID:       1,
+		Type:     "standard",
+		Tier:     "A",
+		Currency: "usd",
+		Price:    10,
+		Limit:    5,
+		Event: &models.Event{
+			Name:     "test",
+			Title:    "test event",
+			Location: "location",
+			DateTime: &dt,
+			Deadline: &dl,
+			Organization: models.Organization{
+				Name:            "org",
+				OwnerID:         *s.UserId,
+				StripeAccountID: stripe.String("acct_test"),
+				Type:            "standard",
+			},
+		},
+	}
+	db := db.GetDb()
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(ticket).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	assert.NoError(s.T(), err)
+
+	token, err := utils.GenerateJWT(email, *s.UserId, ticket.Event.OrganizerID)
+	assert.NoError(s.T(), err)
+
+	router := setupRouter()
+	apiv1 := apiv1Group(router)
+	apiv1.Use(authMiddleware)
+	bookingHandlers(apiv1)
+
+	s.Run("Should list all bookings", func() {
+		w := httptest.NewRecorder()
+		eventReq, err := http.NewRequest("GET", "/api/v1/bookings", nil)
+		assert.NoError(s.T(), err)
+		eventReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		router.ServeHTTP(w, eventReq)
+		resbytes, err := io.ReadAll(w.Body)
+		assert.NoError(s.T(), err)
+		sres := string(resbytes)
+		count := gjson.Get(sres, "count").Int()
+		assert.Zero(s.T(), count)
+
+		assert.Equal(s.T(), 200, w.Code)
+	})
+}
+
+func (s *TestSuite) TestReservations() {
+	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 22:00:00 +08:00")
+	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 10:00:00 +08:00")
+	ticket := &models.Ticket{
+		ID:       11,
+		Type:     "standard",
+		Tier:     "A",
+		Currency: "usd",
+		Price:    10,
+		Limit:    5,
+		Event: &models.Event{
+			ID:       11,
+			Name:     "test",
+			Title:    "test event",
+			Location: "location",
+			DateTime: &dt,
+			Deadline: &dl,
+			Organization: models.Organization{
+				ID:              11,
+				Name:            "org",
+				OwnerID:         *s.UserId,
+				StripeAccountID: stripe.String("acct_test"),
+				Type:            "standard",
+			},
+		},
+	}
+	db := db.GetDb()
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(ticket).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	assert.NoError(s.T(), err)
+
+	token, err := utils.GenerateJWT(email, *s.UserId, ticket.Event.OrganizerID)
+	assert.NoError(s.T(), err)
+
+	router := setupRouter()
+	apiv1 := apiv1Group(router)
+	apiv1.Use(authMiddleware)
+	reservationHandlers(apiv1)
+
+	s.Run("Should list all Reservation", func() {
+		w := httptest.NewRecorder()
+		eventReq, err := http.NewRequest("GET", "/api/v1/reservations?org=true", nil)
+		assert.NoError(s.T(), err)
+		eventReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		router.ServeHTTP(w, eventReq)
+		resbytes, err := io.ReadAll(w.Body)
+		assert.NoError(s.T(), err)
+		sres := string(resbytes)
+		count := gjson.Get(sres, "count").Int()
+		assert.Zero(s.T(), count)
+
+		assert.Equal(s.T(), 200, w.Code)
+	})
+}
+
+func (s *TestSuite) TestTransactions() {
+	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 22:00:00 +08:00")
+	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 10:00:00 +08:00")
+	ticket := &models.Ticket{
+		ID:            10,
+		Type:          "standard",
+		Tier:          "A",
+		Currency:      "usd",
+		Price:         10,
+		Limit:         5,
+		StripePriceId: stripe.String("price_test"),
+		Event: &models.Event{
+			ID:       10,
+			Name:     "test",
+			Title:    "test event",
+			Location: "location",
+			DateTime: &dt,
+			Deadline: &dl,
+			Organization: models.Organization{
+				ID:              10,
+				Name:            "org",
+				OwnerID:         *s.UserId,
+				StripeAccountID: stripe.String("acct_test"),
+				Type:            "standard",
+			},
+		},
+	}
+	db := db.GetDb()
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(ticket).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	assert.NoError(s.T(), err)
+
+	token, err := utils.GenerateJWT(email, *s.UserId, *s.OrgId)
+	assert.NoError(s.T(), err)
+
+	router := setupRouter()
+	apiv1 := apiv1Group(router)
+	apiv1.Use(authMiddleware)
+	transactionHandlers(apiv1)
+
+	s.Run("Should create a Transaction", func() {
+		reqBody := &types.CreateBookingRequestBody{
+			Items: []types.ReservationTicket{
+				{
+					TicketID: 10,
+					Qty:      1,
+				},
+			},
+		}
+		rbytes, _ := json.Marshal(reqBody)
+		assert.NoError(s.T(), err)
+		w := httptest.NewRecorder()
+		eventReq, err := http.NewRequest("POST", "/api/v1/checkout", strings.NewReader(string(rbytes)))
+		assert.NoError(s.T(), err)
+		eventReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		router.ServeHTTP(w, eventReq)
+		resbytes, err := io.ReadAll(w.Body)
+		assert.NoError(s.T(), err)
+		sres := string(resbytes)
+		url := gjson.Get(sres, "url").String()
+		assert.NotEmpty(s.T(), url)
+
+		assert.Equal(s.T(), 200, w.Code)
 	})
 }
 

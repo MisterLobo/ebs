@@ -606,6 +606,34 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 				paymentMethods = append(paymentMethods, pm)
 			}
 			ctx.JSON(http.StatusOK, gin.H{"data": &paymentMethods})
+		}).
+		POST("/payment_methods", func(ctx *gin.Context) {
+			var body struct {
+				PaymentMethodID string `json:"pm_id" binding:"required"`
+			}
+			if err := ctx.ShouldBindJSON(&body); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			userId := ctx.GetUint("id")
+			var user struct {
+				StripeCustomerId *string `json:"customer_id,omitempty"`
+			}
+			db := db.GetDb()
+			if err := db.
+				Model(&models.User{}).
+				Where(&models.User{ID: userId}).
+				Select("StripeCustomerId").
+				Scan(&user).
+				Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					ctx.Status(http.StatusNotFound)
+					return
+				}
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			ctx.Status(http.StatusNoContent)
 		})
 	return apiv1
 }

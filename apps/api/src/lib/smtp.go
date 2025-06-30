@@ -10,10 +10,28 @@ import (
 
 func GetSMTPClient() (*mail.Client, error) {
 	host := os.Getenv("SMTP_HOST")
-	port := 587
+	port, err := strconv.Atoi(os.Getenv("SMTP_PORT"))
+	if err != nil {
+		log.Println("SMTP_PORT not set. Setting to default")
+		port = 587
+	}
 	user := os.Getenv("SMTP_USERNAME")
 	pass := os.Getenv("SMTP_PASSWORD")
-	c, err := mail.NewClient(host, mail.WithPort(port), mail.WithSMTPAuth(mail.SMTPAuthPlain), mail.WithUsername(user), mail.WithPassword(pass))
+	opts := make([]mail.Option, 0)
+	opts = append(opts, mail.WithPort(port))
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv == "local" {
+		opts = append(opts, mail.WithSMTPAuth(mail.SMTPAuthNoAuth))
+		opts = append(opts, mail.WithTLSPolicy(mail.TLSOpportunistic))
+	} else {
+		opts = append(opts, mail.WithSMTPAuth(mail.SMTPAuthPlain))
+		opts = append(opts, mail.WithUsername(user))
+		opts = append(opts, mail.WithPassword(pass))
+	}
+	c, err := mail.NewClient(
+		host,
+		opts...,
+	)
 	if err != nil {
 		log.Printf("Could not initialize smtp client: %s\n", err.Error())
 		return nil, err

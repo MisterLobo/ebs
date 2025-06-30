@@ -27,6 +27,7 @@ func NewMailerMessage(input *lib.SendMailInput) error {
 		if err := lib.KafkaProduceMessage("emails", utils.WithSuffix(emailQueue), emailBody); err != nil {
 			return fmt.Errorf("error sending message to queue: %s", err.Error())
 		}
+		return nil
 	}
 	body, err := json.Marshal(&emailBody)
 	if err != nil {

@@ -18,6 +18,13 @@
         "command": "air -c .air.debug.toml"
       }
     },
+    "serve:tls": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/api/",
+        "command": "TLS_ENABLE=true air -c .air.debug.toml"
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
       "options": {

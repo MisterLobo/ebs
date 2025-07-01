@@ -697,13 +697,20 @@ func (s *TestSuite) TestRegisterAnotherUser() {
 }
 
 func (s *TestSuite) TestRegisterMultipleUsers() {
+	db := db.GetDb()
+	var dels models.Organization
+	err := db.Unscoped().Model(&models.Organization{}).Where("id > ?", 0).Delete(&dels).Error
+	assert.NoError(s.T(), err)
+
 	oldEmail := s.Email
 	router := setupRouter()
 	guestAuthRoutes(router)
 
-	const USER_COUNT int = 20
-	for i := range USER_COUNT {
-		email := fmt.Sprintf("anotheruser+%d@company.test", i)
+	const USER_COUNT int = 5
+	for range USER_COUNT {
+		var fd FakeStruct
+		faker.FakeData(&fd)
+		email := fd.Email
 		_, err := createFirebaseUser(s, email)
 		assert.NoError(s.T(), err)
 

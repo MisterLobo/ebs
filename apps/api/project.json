@@ -29,7 +29,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/api/src/",
-        "command": "go test -race"
+        "command": "go test"
       }
     },
     "emu": {

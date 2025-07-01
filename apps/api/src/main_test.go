@@ -203,12 +203,13 @@ func createFirebaseUser(s *TestSuite, email string) (*string, error) {
 
 func createUser(s *TestSuite, email string, uid string) (*models.User, error) {
 	user := models.User{
+		ID:    999,
 		Email: email,
 		Name:  email,
 		UID:   uid,
 	}
 	org := models.Organization{
-		ID:              1,
+		ID:              999,
 		Name:            "test",
 		ContactEmail:    email,
 		StripeAccountID: stripe.String("acct_test"),

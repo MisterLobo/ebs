@@ -219,7 +219,7 @@ func NewLocalScheduler() *LocalScheduler {
 // CreateScheduler returns either an instance of LocalScheduler or EventBridgeScheduler based on the app environment value
 func CreateScheduler() Scheduler {
 	env := config.API_ENV
-	if env != "local" {
+	if env == string(types.Production) || env == string(types.Test) {
 		ebs := NewAwsScheduler()
 		return ebs
 	}

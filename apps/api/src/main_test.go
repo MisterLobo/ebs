@@ -815,6 +815,9 @@ func (s *TestSuite) TestEvents() {
 
 func (s *TestSuite) TestTickets() {
 	db := db.GetDb()
+	var dels []models.Ticket
+	err := db.Unscoped().Model(&models.Ticket{}).Where("id > ?", 0).Delete(&dels).Error
+	assert.NoError(s.T(), err)
 
 	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2225-07-31 22:00:00 +08:00")
 	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2225-07-31 10:00:00 +08:00")
@@ -832,7 +835,7 @@ func (s *TestSuite) TestTickets() {
 			Type:            "standard",
 		},
 	}
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(event).Error; err != nil {
 			return err
 		}
@@ -883,19 +886,21 @@ func (s *TestSuite) TestBookings() {
 	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 22:00:00 +08:00")
 	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 10:00:00 +08:00")
 	ticket := &models.Ticket{
-		ID:       1,
+		ID:       1_000_000,
 		Type:     "standard",
 		Tier:     "A",
 		Currency: "usd",
 		Price:    10,
 		Limit:    5,
 		Event: &models.Event{
+			ID:       1_000_000,
 			Name:     "test",
 			Title:    "test event",
 			Location: "location",
 			DateTime: &dt,
 			Deadline: &dl,
 			Organization: models.Organization{
+				ID:              1_000_000,
 				Name:            "org",
 				OwnerID:         *s.UserId,
 				StripeAccountID: stripe.String("acct_test"),
@@ -905,6 +910,10 @@ func (s *TestSuite) TestBookings() {
 	}
 	db := db.GetDb()
 	err := db.Transaction(func(tx *gorm.DB) error {
+		var dels []models.Ticket
+		if err := tx.Unscoped().Model(&models.Ticket{}).Where("id > ?", 0).Delete(&dels).Error; err != nil {
+			return err
+		}
 		if err := tx.Create(ticket).Error; err != nil {
 			return err
 		}

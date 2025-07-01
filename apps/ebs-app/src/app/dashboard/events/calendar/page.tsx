@@ -27,7 +27,7 @@ export default async function EventsCalendarPage() {
         </Breadcrumb>
       </div>
     </header>
-    <EventsCalendarComponent calendarResolver={getCalendar(org?.id as number)} />
+    <EventsCalendarComponent calendarResolver={getCalendar(org?.id as number)} organizationResolver={getActiveOrganization()} />
     </>
   )
 }

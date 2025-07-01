@@ -91,6 +91,7 @@ export type Organization = {
   slug?: string,
   about?: string,
   website?: string,
+  timezone?: string,
 
   events?: Event[],
   owner?: User,

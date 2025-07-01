@@ -60,7 +60,7 @@ export default function EventFiltersHeader({ }: Props) {
   return (
     <>
     <Form {...form}>
-      <form>
+      <form className="my-10">
         <FormField
           control={form.control}
           name="category"
@@ -71,13 +71,13 @@ export default function EventFiltersHeader({ }: Props) {
                 <Popover open={open} onOpenChange={onOpenChange}>
                   <PopoverTrigger asChild>
                     <FormControl>
-                      <Button variant="outline" role="combobox" className="w-72 justify-between">
+                      <Button variant="outline" role="combobox" className="w-96 justify-between">
                         {field.value ? categories.find(c => c === field.value) : 'Select category'}
                         <ChevronsUpDownIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </FormControl>
                   </PopoverTrigger>
-                  <PopoverContent className="w-72 p-0">
+                  <PopoverContent className="w-96 p-0">
                     <Command>
                       <CommandInput placeholder="Search categories" />
                       <CommandList>

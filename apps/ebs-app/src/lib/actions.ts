@@ -7,7 +7,7 @@ import { TurnstileServerValidationResponse } from '@marsidev/react-turnstile'
 import { Stripe } from 'stripe'
 import getStripeApiClient from './stripe.server'
 
-export async function getActiveOrganization(): Promise<Organization | undefined> {
+export async function getActiveOrganization(): Promise<Organization | null> {
   const $cookies = await cookies()
   const token = $cookies.get('token')?.value
   const response = await fetch(`${process.env.API_HOST}/organizations/active`, {
@@ -17,10 +17,10 @@ export async function getActiveOrganization(): Promise<Organization | undefined>
   })
   if (response.status === 401) {
     $cookies.delete('token')
-    return
+    return null
   }
   if (response.status !== 200) {
-    return
+    return null
   }
   const { active } = await response.json()
   return active

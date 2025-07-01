@@ -65,23 +65,32 @@ export function SettingsAccountSecurity({ devices }: SettingsAccountSecurityProp
     const options = await registerPasskeyMFA(null)
     if (!options) {
       const error = 'Something went wrong on our end.'
-      alert(error)
+      console.error(error)
       return
     }
-    const creds = await navigator.credentials.create({ publicKey: options })
-    const cjson: Record<string, any> = JSON.parse(JSON.stringify(creds))
-    const ok = await registerPasskeyMFA(cjson, 'finish') as boolean
-    setBusy(false)
-    if (ok) {
-      toast('NOTICE', {
-        description: 'MFA device registered successfully!',
+    try {
+      const creds = await navigator.credentials.create({ publicKey: options })
+      const cjson: Record<string, any> = JSON.parse(JSON.stringify(creds))
+      const ok = await registerPasskeyMFA(cjson, 'finish') as boolean
+      setBusy(false)
+      if (ok) {
+        toast('NOTICE', {
+          description: 'MFA device registered successfully!',
+        })
+        router.refresh()
+        return
+      }
+      toast('ERROR', {
+        description: 'MFA device registration failed',
       })
-      router.refresh()
-      return
+    } catch (e: any) {
+      console.error(e)
+      toast('ERROR', {
+        description: 'MFA device registration aborted',
+      })
+    } finally {
+      setBusy(false)
     }
-    toast('ERROR', {
-      description: 'MFA device registration failed',
-    })
   }, [])
   const revokeDevice = useCallback(async (name: string) => {
     if (prompt(`Revoke ${name}? Type 'revoke' to continue.`) !== 'revoke') {

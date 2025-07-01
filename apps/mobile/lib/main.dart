@@ -100,7 +100,7 @@ class Authenticator {
     final idToken = await cred.user?.getIdToken();
     debugPrint('idToken: $idToken');
     final response = await http.post(
-      appEnv == 'local' ? Uri.http(apiHost, '/api/v1/auth/login') : Uri.https(apiHost, '/api/v1/auth/login'),
+      appEnv == 'local' ? Uri.http(apiHost, '/auth/login') : Uri.https(apiHost, '/auth/login'),
       headers: <String, String>{
         'Authorization': '$idToken',
         'origin': 'app:mobile',
@@ -127,7 +127,7 @@ class Authenticator {
     var apiHost = dotenv.env['API_HOST'] ?? '';
     var appEnv = dotenv.env['APP_ENV'] ?? '';
     final response = await http.post(
-      appEnv == 'local' ? Uri.http(apiHost, '/api/v1/admission') : Uri.https(apiHost, '/api/v1/admission'),
+      appEnv == 'local' ? Uri.http(apiHost, '/admission') : Uri.https(apiHost, '/admission'),
       headers: <String, String>{
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer ${state.token ?? 'token'}',

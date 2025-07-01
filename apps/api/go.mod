@@ -145,6 +145,7 @@ require (
 	github.com/duo-labs/webauthn v0.0.0-20221205164246-ebaf9b74c6ec // indirect
 	github.com/fxamacker/cbor/v2 v2.8.0 // indirect
 	github.com/go-co-op/gocron/mocks/v2 v2.0.0-20250516191533-4fb3b987637d // indirect
+	github.com/go-faker/faker/v4 v4.6.1 // indirect
 	github.com/go-redis/redismock/v9 v9.2.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.2 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect

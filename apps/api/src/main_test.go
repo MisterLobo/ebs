@@ -30,6 +30,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/go-faker/faker/v4"
 	"github.com/go-playground/validator/v10"
 	"github.com/go-redis/redismock/v9"
 	"github.com/golang-jwt/jwt/v5"
@@ -57,6 +58,7 @@ type TestSuite struct {
 	RedisClient  *redis.Client
 	OrgId        *uint
 	EventId      *uint
+	Email        *string
 }
 
 type TestUserModel struct {
@@ -76,7 +78,7 @@ func authMiddleware(ctx *gin.Context) {
 	}
 	claims := &Claims{}
 	tkn, err := jwt.ParseWithClaims(reqToken, claims, func(t *jwt.Token) (any, error) {
-		return jwtKey, nil
+		return []byte(config.JWT_SECRET), nil
 	})
 	if err != nil {
 		log.Printf("token error: %s\n", err.Error())
@@ -201,15 +203,17 @@ func createFirebaseUser(s *TestSuite, email string) (*string, error) {
 	return &cuser.UID, nil
 }
 
-func createUser(s *TestSuite, email string, uid string) (*models.User, error) {
+func createUser(s *TestSuite, email, uid string) (*models.User, error) {
+	var fake FakeStruct
+	faker.FakeData(&fake)
 	user := models.User{
-		ID:    999,
+		ID:    fake.ID,
 		Email: email,
-		Name:  email,
+		Name:  fake.Name,
 		UID:   uid,
 	}
 	org := models.Organization{
-		ID:              999,
+		ID:              fake.ID,
 		Name:            "test",
 		ContactEmail:    email,
 		StripeAccountID: stripe.String("acct_test"),
@@ -364,9 +368,12 @@ func (s *TestSuite) SetupSuite() {
 	lib.NewStripeClient(sc)
 
 	// Mock Firebase app with emulator suite
-	app, _ := firebase.NewApp(context.Background(), &firebase.Config{
+	app, err := firebase.NewApp(context.Background(), &firebase.Config{
 		ProjectID: "projectId",
 	})
+	if err != nil {
+		log.Fatalf("Error setting up Firebase application: %s\n", err.Error())
+	}
 	s.FirebaseApp = app
 	lib.NewFirebaseApp(app)
 }
@@ -387,10 +394,23 @@ func (s *TestSuite) TearDownSuite() {
 	rd.Close()
 }
 
+type FakeStruct struct {
+	ID    uint
+	Email string `faker:"email"`
+	Name  string `faker:"first_name"`
+}
+
 func (s *TestSuite) SetupTest() {
+	var fakeStruct FakeStruct
+	if err := faker.FakeData(&fakeStruct); err != nil {
+		log.Fatalf("Faker error: %s\n", err.Error())
+	}
+	email := fakeStruct.Email
+	s.Email = &fakeStruct.Email
+
 	f, _ := createFirebaseUser(s, email)
 	createUser(s, email, *f)
-	token, _ := newJwt(*f)
+	token, _ := newFirebaseJWT(*f)
 	s.Token = &token
 }
 
@@ -398,6 +418,7 @@ func (s *TestSuite) TearDownTest() {
 	s.Token = nil
 	s.UID = nil
 	s.UserId = nil
+	email := *s.Email
 	deleteTestUser(s, email, true)
 }
 
@@ -444,10 +465,6 @@ func (s *TestSuite) TestMaintenanceMode() {
 
 	assert.Equal(s.T(), 503, w.Code)
 }
-
-const (
-	email = "someone@company.test"
-)
 
 func newKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
 	pubKeyPath := "./id_rsa_test.pub"
@@ -529,7 +546,7 @@ func getClaims() jwt.Claims {
 	return claims
 }
 
-func newJwt(uid string) (string, error) {
+func newFirebaseJWT(uid string) (string, error) {
 	claims := getClaims().(TestClaims)
 	claims.UID = uid
 	claims.Subject = uid
@@ -544,6 +561,7 @@ func newJwt(uid string) (string, error) {
 }
 
 func (s *TestSuite) TestUserNotFound() {
+	email := *s.Email
 	deleteTestUser(s, email, true)
 
 	router := setupRouter()
@@ -559,7 +577,7 @@ func (s *TestSuite) TestUserNotFound() {
 	user, _ := fb.CreateUser(context.Background(), newuser)
 	s.UID = &user.UID
 
-	jwt, err := newJwt(user.UID)
+	jwt, err := newFirebaseJWT(user.UID)
 	assert.NoError(s.T(), err)
 	sbody, _ := json.Marshal(&jbody)
 	loginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(sbody)))
@@ -569,6 +587,16 @@ func (s *TestSuite) TestUserNotFound() {
 }
 
 func (s *TestSuite) TestLogin() {
+	var fd FakeStruct
+	faker.FakeData(&fd)
+	email := strings.ToLower(*s.Email)
+	fuser, err := createFirebaseUser(s, email)
+	assert.NoError(s.T(), err)
+
+	u, err := createUser(s, email, *fuser)
+	assert.NoError(s.T(), err)
+	assert.NotNil(s.T(), u)
+
 	router := setupRouter()
 	guestAuthRoutes(router)
 
@@ -576,10 +604,13 @@ func (s *TestSuite) TestLogin() {
 	jbody := map[string]any{
 		"email": email,
 	}
-	jwt, err := newJwt(*s.UID)
+	jwt, err := newFirebaseJWT(*s.UID)
 	assert.NoError(s.T(), err)
-	sbody, _ := json.Marshal(&jbody)
-	loginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(sbody)))
+	sbody, err := json.Marshal(&jbody)
+	assert.NoError(s.T(), err)
+
+	loginReq, err := http.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(sbody)))
+	assert.NoError(s.T(), err)
 	loginReq.Header.Set("Authorization", jwt)
 	router.ServeHTTP(w, loginReq)
 
@@ -592,13 +623,17 @@ func (s *TestSuite) TestLogin() {
 		Token *string `json:"token"`
 	}
 	err = json.Unmarshal(rbytes, &response)
-	assert.NoError(s.T(), err)
+	assert.NoError(s.T(), err, "There was an error")
 	assert.NotNil(s.T(), response.Token)
 	s.Token = response.Token
 }
 
 func (s *TestSuite) TestRegisterUser() {
-	deleteUser(s, email)
+	var fd FakeStruct
+	faker.FakeData(&fd)
+	email := fd.Email
+	_, err := createFirebaseUser(s, email)
+	assert.NoError(s.T(), err)
 
 	router := setupRouter()
 	guestAuthRoutes(router)
@@ -610,7 +645,7 @@ func (s *TestSuite) TestRegisterUser() {
 	}
 	sbody, _ := json.Marshal(&jbody)
 
-	token, err := newJwt(*s.UID)
+	token, err := newFirebaseJWT(*s.UID)
 	assert.NoError(s.T(), err)
 	strBody := string(sbody)
 	log.Printf("strbody: %s\n", strBody)
@@ -646,7 +681,7 @@ func (s *TestSuite) TestRegisterAnotherUser() {
 	}
 	sbody, _ := json.Marshal(&jbody)
 
-	token, err := newJwt(*s.UID)
+	token, err := newFirebaseJWT(*s.UID)
 	assert.NoError(s.T(), err)
 	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
 	registerReq.Header.Set("Authorization", token)
@@ -662,6 +697,7 @@ func (s *TestSuite) TestRegisterAnotherUser() {
 }
 
 func (s *TestSuite) TestRegisterMultipleUsers() {
+	oldEmail := s.Email
 	router := setupRouter()
 	guestAuthRoutes(router)
 
@@ -678,7 +714,7 @@ func (s *TestSuite) TestRegisterMultipleUsers() {
 		}
 		sbody, _ := json.Marshal(&jbody)
 
-		token, err := newJwt(*s.UID)
+		token, err := newFirebaseJWT(*s.UID)
 		assert.NoError(s.T(), err)
 		go func() {
 			defer deleteTestUser(s, email, true)
@@ -693,6 +729,8 @@ func (s *TestSuite) TestRegisterMultipleUsers() {
 			assert.Equal(s.T(), 200, w.Code)
 			assert.NotEmpty(s.T(), uid)
 			assert.NotNil(s.T(), uid)
+
+			s.Email = oldEmail
 		}()
 	}
 }
@@ -708,7 +746,7 @@ func (s *TestSuite) TestRegisterWithoutFirebaseAccount() {
 	}
 	sbody, _ := json.Marshal(&jbody)
 
-	token, err := newJwt(*s.UID)
+	token, err := newFirebaseJWT(*s.UID)
 	assert.NoError(s.T(), err)
 	registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
 	registerReq.Header.Set("Authorization", token)
@@ -721,6 +759,7 @@ func (s *TestSuite) TestRegisterWithoutFirebaseAccount() {
 }
 
 func (s *TestSuite) TestEvents() {
+	email := *s.Email
 	token, err := utils.GenerateJWT(email, *s.UserId, 1)
 	assert.NoError(s.T(), err)
 
@@ -844,6 +883,7 @@ func (s *TestSuite) TestTickets() {
 	})
 	assert.NoError(s.T(), err)
 
+	email := *s.Email
 	token, err := utils.GenerateJWT(email, *s.UserId, event.OrganizerID)
 	assert.NoError(s.T(), err)
 
@@ -922,6 +962,7 @@ func (s *TestSuite) TestBookings() {
 	})
 	assert.NoError(s.T(), err)
 
+	email := *s.Email
 	token, err := utils.GenerateJWT(email, *s.UserId, ticket.Event.OrganizerID)
 	assert.NoError(s.T(), err)
 
@@ -981,6 +1022,7 @@ func (s *TestSuite) TestReservations() {
 	})
 	assert.NoError(s.T(), err)
 
+	email := *s.Email
 	token, err := utils.GenerateJWT(email, *s.UserId, ticket.Event.OrganizerID)
 	assert.NoError(s.T(), err)
 
@@ -1009,7 +1051,7 @@ func (s *TestSuite) TestTransactions() {
 	dt, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 22:00:00 +08:00")
 	dl, _ := time.Parse(config.TIME_PARSE_FORMAT, "2025-07-31 10:00:00 +08:00")
 	ticket := &models.Ticket{
-		ID:            10,
+		ID:            10_000_000,
 		Type:          "standard",
 		Tier:          "A",
 		Currency:      "usd",
@@ -1017,14 +1059,14 @@ func (s *TestSuite) TestTransactions() {
 		Limit:         5,
 		StripePriceId: stripe.String("price_test"),
 		Event: &models.Event{
-			ID:       10,
+			ID:       10_000_000,
 			Name:     "test",
 			Title:    "test event",
 			Location: "location",
 			DateTime: &dt,
 			Deadline: &dl,
 			Organization: models.Organization{
-				ID:              10,
+				ID:              10_000_000,
 				Name:            "org",
 				OwnerID:         *s.UserId,
 				StripeAccountID: stripe.String("acct_test"),
@@ -1041,6 +1083,7 @@ func (s *TestSuite) TestTransactions() {
 	})
 	assert.NoError(s.T(), err)
 
+	email := *s.Email
 	token, err := utils.GenerateJWT(email, *s.UserId, *s.OrgId)
 	assert.NoError(s.T(), err)
 
@@ -1053,7 +1096,7 @@ func (s *TestSuite) TestTransactions() {
 		reqBody := &types.CreateBookingRequestBody{
 			Items: []types.ReservationTicket{
 				{
-					TicketID: 10,
+					TicketID: 10_000_000,
 					Qty:      1,
 				},
 			},

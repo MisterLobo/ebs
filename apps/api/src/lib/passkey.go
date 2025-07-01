@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
@@ -21,10 +22,10 @@ func InitWebAuthn(timeout time.Duration, debug bool) error {
 			"https://localhost:9090",
 			"https://localhost",
 		},
-		/* AuthenticatorSelection: protocol.AuthenticatorSelection{
+		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			AuthenticatorAttachment: protocol.AuthenticatorAttachment("cross-platform"),
-			// RequireResidentKey:      protocol.ResidentKeyNotRequired(),
-			UserVerification: protocol.VerificationPreferred,
+			RequireResidentKey:      protocol.ResidentKeyNotRequired(),
+			UserVerification:        protocol.VerificationPreferred,
 		},
 		AttestationPreference: protocol.PreferNoAttestation,
 		Debug:                 debug,
@@ -37,7 +38,7 @@ func InitWebAuthn(timeout time.Duration, debug bool) error {
 				Timeout: timeout,
 				Enforce: !debug,
 			},
-		}, */
+		},
 	}
 	wauth, err := webauthn.New(wconfig)
 	if err != nil {

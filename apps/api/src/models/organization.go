@@ -31,6 +31,7 @@ type Organization struct {
 	TenantID             *uuid.UUID      `gorm:"type:uuid" json:"-"`
 	Identifier           *string         `gorm:"<-:create" json:"resource_id"`
 	CalendarID           *string         `json:"calId,omitempty"`
+	Timezone             string          `gorm:"default:'UTC'" json:"timezone,omitempty"`
 
 	Events []Event `gorm:"foreignKey:organizer_id" json:"-"`
 	Owner  User    `gorm:"foreignKey:owner_id" json:"-"`

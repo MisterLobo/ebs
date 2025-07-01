@@ -12,6 +12,7 @@ func GetDSN() string {
 }
 
 const TIME_PARSE_FORMAT = "2006-01-02 15:04:05 -07:00"
+const GAPI_TIME_PARSE_FORMAT = "2006-01-02T15:04:05-0700"
 
 var (
 	API_ENV             = os.Getenv("API_ENV")

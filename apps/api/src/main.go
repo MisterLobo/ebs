@@ -82,8 +82,6 @@ func (c Claims) GetAudience() (jwt.ClaimStrings, error) {
 	return c.RegisteredClaims.GetAudience()
 }
 
-var jwtKey = []byte(os.Getenv("JWT_SECRET"))
-
 const (
 	apiPrefix string = "/api/v1"
 )
@@ -731,11 +729,13 @@ func main() {
 				}
 				uid := ctx.GetString("uid")
 
+				cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 				go func() {
+					defer cancel()
 					rd := lib.GetRedisClient()
 					token := rd.JSONGet(context.Background(), fmt.Sprintf("%s:fcm", uid), "$.token").Val()
 					fcm, _ := lib.GetFirebaseMessaging()
-					fcm.SubscribeToTopic(ctx.Copy(), []string{token}, "Notifications")
+					fcm.SubscribeToTopic(cctx, []string{token}, "Notifications")
 				}()
 
 				ctx.Status(http.StatusOK)

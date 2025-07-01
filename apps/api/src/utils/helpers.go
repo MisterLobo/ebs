@@ -73,6 +73,8 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 		TenantID:    &tenantId,
 		Timezone:    params.Timezone,
 		CalEventID:  &calEventID,
+		Type:        params.Type,
+		Category:    params.Category,
 	}
 
 	var eventId uint
@@ -157,16 +159,20 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 				log.Printf("Could not decode Calendar ID from base64 string: %s\n", err.Error())
 				return
 			}
+			eventStartDate := event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT)
+			if !params.Publish && params.Mode == "scheduled" && opens_at != nil {
+				eventStartDate = event.OpensAt.Format(config.GAPI_TIME_PARSE_FORMAT)
+			}
 			err = lib.GAPIAddEvent(string(calID), &calendar.Event{
 				Id:       calEventID,
 				Summary:  event.Title,
 				Location: event.Location,
 				Start: &calendar.EventDateTime{
-					DateTime: event.DateTime.Format("2006-01-02T15:04:05-0700"),
+					DateTime: eventStartDate,
 					TimeZone: event.Timezone,
 				},
 				End: &calendar.EventDateTime{
-					DateTime: event.DateTime.Add(24 * time.Hour).Format("2006-01-02T15:04:05-0700"),
+					DateTime: event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT),
 					TimeZone: event.Timezone,
 				},
 				Description: *event.About,

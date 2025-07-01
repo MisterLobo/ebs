@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"ebs/src/config"
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
@@ -225,6 +226,10 @@ func KafkaEventsToOpenConsumer(spayload string) {
 		err = lib.GAPIUpdateEvent(string(calID), &calendar.Event{
 			Id:     *event.CalEventID,
 			Status: "confirmed",
+			End: &calendar.EventDateTime{
+				DateTime: event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT),
+				TimeZone: event.Timezone,
+			},
 		}, svc)
 		if err != nil {
 			log.Printf("Failed to update Event in Calendar: id=%s err=%s\n", *event.CalEventID, err.Error())

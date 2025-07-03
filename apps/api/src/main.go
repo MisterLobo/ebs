@@ -583,7 +583,9 @@ func main() {
 			panic(err)
 		}
 	}
-	initLogger()
+	if config.API_ENV != string(types.Production) && config.API_ENV != string(types.Test) {
+		initLogger()
+	}
 
 	boot.InitDb()
 	boot.InitScheduler()

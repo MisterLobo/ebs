@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"ebs/src/boot"
 	"ebs/src/config"
 	"ebs/src/db"
 	"ebs/src/lib"
@@ -342,9 +343,10 @@ func (s *TestSuite) SetupSuite() {
 	}
 	/* ctrl := gomock.NewController(s.T())
 	ss := gocronmocks.NewMockScheduler(ctrl)
+	ss.EXPECT().NewJob()
 	assert.NotNil(s.T(), ss)
-	lib.NewScheduler(ss)
-	boot.InitScheduler() */
+	lib.NewScheduler(ss) */
+	boot.InitScheduler()
 
 	// Mock Redis API
 	rc, rmock := redismock.NewClientMock()
@@ -392,6 +394,8 @@ func (s *TestSuite) TearDownSuite() {
 	db2, _ := db.DB()
 	db2.Close()
 	rd.Close()
+	sch, _ := lib.GetScheduler()
+	sch.Shutdown()
 }
 
 type FakeStruct struct {

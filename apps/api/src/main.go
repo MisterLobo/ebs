@@ -1104,13 +1104,14 @@ func main() {
 					}
 
 					mm := map[string]string{"photoURL": user.PhotoURL}
+					cctx := ctx.Copy()
 					go func() {
 						rd := lib.GetRedisClient()
-						_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:user", muser.ID), "$", &muser).Result()
+						_, err = rd.JSONSet(cctx, fmt.Sprintf("%d:user", muser.ID), "$", &muser).Result()
 						if err != nil {
 							log.Printf("[redis] Error updating user cache: %s\n", err.Error())
 						}
-						_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:meta", muser.ID), "$", &mm).Result()
+						_, err = rd.JSONSet(cctx, fmt.Sprintf("%d:meta", muser.ID), "$", &mm).Result()
 						if err != nil {
 							log.Printf("[redis] Error updating user cache: %s\n", err.Error())
 						}

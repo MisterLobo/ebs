@@ -51,7 +51,7 @@ export default function LoginForm() {
     } catch (error: any) {
       alert(error.message)
     }
-  }, [])
+  }, [token])
 
   return (
     <div className="flex flex-col items-center h-96 min-w-lg justify-center p-4 relative border rounded-xl">

@@ -262,7 +262,8 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.29.3
-      - run: |
+      - name: Test and Build Bundle
+        run: |
           cd apps/mobile/
           ls -al
           flutter --version

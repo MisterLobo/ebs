@@ -26,7 +26,7 @@ const formSchema = z.object({
 })
 
 type Props = {
-  organizationResolver: Promise<Organization | undefined>,
+  organizationResolver: Promise<Organization | null>,
   countriesResolver: Promise<Country[]>,
 }
 export default function SettingsGeneralForm({ organizationResolver, countriesResolver }: Props) {

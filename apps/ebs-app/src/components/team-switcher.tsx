@@ -36,7 +36,7 @@ export function TeamSwitcher({
 }) {
   const router = useRouter()
   const { isMobile } = useSidebar()
-  const [activeOrg, setActiveOrg] = useState<Organization>()
+  const [activeOrg, setActiveOrg] = useState<Organization | null>()
 
   useEffect(() => {
     getActiveOrganization().then(active => setActiveOrg(active))

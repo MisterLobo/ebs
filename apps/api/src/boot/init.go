@@ -345,9 +345,9 @@ func DownloadFileFromS3(filename, localpath, bucket string, overwriteIfExists bo
 			return err
 		}
 		defer object.Body.Close()
-		file, err := os.Create(filename)
+		file, err := os.Create(localpath)
 		if err != nil {
-			log.Printf("Could not create file %s: %s\n", filename, err.Error())
+			log.Printf("Could not create file %s: %s\n", localpath, err.Error())
 			return err
 		}
 		defer file.Close()
@@ -361,7 +361,7 @@ func DownloadFileFromS3(filename, localpath, bucket string, overwriteIfExists bo
 			log.Printf("Error writing to file: %s\n", err.Error())
 			return err
 		}
-		log.Println("File has been written")
+		log.Printf("File has been written to %s\n", localpath)
 		return nil
 	}
 	log.Println("File exists!")

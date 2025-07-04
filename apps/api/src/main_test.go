@@ -287,6 +287,100 @@ func deleteTestUser(s *TestSuite, email string, fuser bool) error {
 	return nil
 }
 
+func newKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	pubKeyPath := "./id_rsa_test.pub"
+	keyPath := "./id_rsa_test"
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		log.Fatalf("error generating private key: %s\n", err.Error())
+	}
+	if err := privateKey.Validate(); err != nil {
+		log.Fatalf("private key did not pass validation: %s\n", err.Error())
+	}
+	privDER := x509.MarshalPKCS1PrivateKey(privateKey)
+	privBlock := pem.Block{
+		Type:    "RSA PRIVATE KEY",
+		Headers: nil,
+		Bytes:   privDER,
+	}
+	privPEM := pem.EncodeToMemory(&privBlock)
+	if err := privateKey.Validate(); err != nil {
+		log.Fatalf("error encoding key: %s\n", err.Error())
+	}
+	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		log.Fatalf("error generating public key: %s\n", err)
+	}
+	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
+	err = os.WriteFile(keyPath, privPEM, 0600)
+	if err != nil {
+		log.Fatalf("error writing key to file: %s\n", err)
+	}
+	err = os.WriteFile(pubKeyPath, pubKeyBytes, 0600)
+	if err != nil {
+		log.Fatalf("error writing key to file: %s\n", err)
+	}
+	return privateKey, &privateKey.PublicKey, nil
+}
+
+type TestClaims struct {
+	UID string `json:"uid"`
+	jwt.RegisteredClaims
+}
+
+func (c TestClaims) GetExpirationTime() (*jwt.NumericDate, error) {
+	nd := jwt.NewNumericDate(time.Now().Add(30 * time.Minute))
+	return nd, nil
+}
+func (c TestClaims) GetIssuedAt() (*jwt.NumericDate, error) {
+	nd := jwt.NewNumericDate(time.Now())
+	return nd, nil
+}
+func (c TestClaims) GetNotBefore() (*jwt.NumericDate, error) {
+	return c.RegisteredClaims.GetNotBefore()
+}
+func (c TestClaims) GetIssuer() (string, error) {
+	return "issuer", nil
+}
+func (c TestClaims) GetSubject() (string, error) {
+	return "subject", nil
+}
+func (c TestClaims) GetAudience() (jwt.ClaimStrings, error) {
+	cs := jwt.ClaimStrings{}
+	err := cs.UnmarshalJSON([]byte("projectId"))
+	return cs, err
+}
+
+func getClaims() jwt.Claims {
+	jwt.MarshalSingleStringAsArray = false
+	cs := jwt.ClaimStrings{"projectId"}
+	now := time.Now()
+	claims := TestClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  cs,
+			Issuer:    "https://securetoken.google.com/projectId",
+			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+	}
+	return claims
+}
+
+func newFirebaseJWT(uid string) (string, error) {
+	claims := getClaims().(TestClaims)
+	claims.UID = uid
+	claims.Subject = uid
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, &claims)
+
+	key, _, err := newKeyPair()
+	if err != nil {
+		log.Fatalf("error generating key pair: %s\n", err.Error())
+	}
+	return token.SignedString(key)
+}
+
 func (s *TestSuite) SetupSuite() {
 	os.Setenv("APP_HOST", "http://localhost:3000")
 	os.Setenv("STRIPE_SECRET_KEY", "secret")
@@ -470,100 +564,6 @@ func (s *TestSuite) TestMaintenanceMode() {
 	assert.Equal(s.T(), 503, w.Code)
 }
 
-func newKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
-	pubKeyPath := "./id_rsa_test.pub"
-	keyPath := "./id_rsa_test"
-
-	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		log.Fatalf("error generating private key: %s\n", err.Error())
-	}
-	if err := privateKey.Validate(); err != nil {
-		log.Fatalf("private key did not pass validation: %s\n", err.Error())
-	}
-	privDER := x509.MarshalPKCS1PrivateKey(privateKey)
-	privBlock := pem.Block{
-		Type:    "RSA PRIVATE KEY",
-		Headers: nil,
-		Bytes:   privDER,
-	}
-	privPEM := pem.EncodeToMemory(&privBlock)
-	if err := privateKey.Validate(); err != nil {
-		log.Fatalf("error encoding key: %s\n", err.Error())
-	}
-	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		log.Fatalf("error generating public key: %s\n", err)
-	}
-	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
-	err = os.WriteFile(keyPath, privPEM, 0600)
-	if err != nil {
-		log.Fatalf("error writing key to file: %s\n", err)
-	}
-	err = os.WriteFile(pubKeyPath, pubKeyBytes, 0600)
-	if err != nil {
-		log.Fatalf("error writing key to file: %s\n", err)
-	}
-	return privateKey, &privateKey.PublicKey, nil
-}
-
-type TestClaims struct {
-	UID string `json:"uid"`
-	jwt.RegisteredClaims
-}
-
-func (c TestClaims) GetExpirationTime() (*jwt.NumericDate, error) {
-	nd := jwt.NewNumericDate(time.Now().Add(30 * time.Minute))
-	return nd, nil
-}
-func (c TestClaims) GetIssuedAt() (*jwt.NumericDate, error) {
-	nd := jwt.NewNumericDate(time.Now())
-	return nd, nil
-}
-func (c TestClaims) GetNotBefore() (*jwt.NumericDate, error) {
-	return c.RegisteredClaims.GetNotBefore()
-}
-func (c TestClaims) GetIssuer() (string, error) {
-	return "issuer", nil
-}
-func (c TestClaims) GetSubject() (string, error) {
-	return "subject", nil
-}
-func (c TestClaims) GetAudience() (jwt.ClaimStrings, error) {
-	cs := jwt.ClaimStrings{}
-	err := cs.UnmarshalJSON([]byte("projectId"))
-	return cs, err
-}
-
-func getClaims() jwt.Claims {
-	jwt.MarshalSingleStringAsArray = false
-	cs := jwt.ClaimStrings{"projectId"}
-	now := time.Now()
-	claims := TestClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Audience:  cs,
-			Issuer:    "https://securetoken.google.com/projectId",
-			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
-	}
-	return claims
-}
-
-func newFirebaseJWT(uid string) (string, error) {
-	claims := getClaims().(TestClaims)
-	claims.UID = uid
-	claims.Subject = uid
-
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, &claims)
-
-	key, _, err := newKeyPair()
-	if err != nil {
-		log.Fatalf("error generating key pair: %s\n", err.Error())
-	}
-	return token.SignedString(key)
-}
-
 func (s *TestSuite) TestUserNotFound() {
 	email := *s.Email
 	deleteTestUser(s, email, true)
@@ -670,7 +670,9 @@ func (s *TestSuite) TestRegisterUser() {
 }
 
 func (s *TestSuite) TestRegisterAnotherUser() {
-	email := "anotheruser@company.test"
+	var fd FakeStruct
+	faker.FakeData(&fd)
+	email := fd.Email
 	_, err := createFirebaseUser(s, email)
 	assert.NoError(s.T(), err)
 	defer deleteTestUser(s, email, true)

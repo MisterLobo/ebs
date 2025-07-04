@@ -407,23 +407,23 @@ export async function loginUser(email: string, idToken: string): Promise<{ ok: b
     }),
   })
   const $cookies = await cookies()
-  $cookies.set('id_token', idToken)
+  const secure = process.env.APP_HOST?.startsWith('https://') || process.env.APP_ENV !== 'local'
+  const expiry = 86_400_000 // 24h
+  const cookieOpts = {
+    secure,
+    httpOnly: true,
+    path: '/',
+    sameSite: 'lax',
+    domain: process.env.APP_DOMAIN ?? '',
+    expires: Date.now()+expiry,
+  }
+  $cookies.set('id_token', idToken, cookieOpts as any)
+  if (!isProd()) {
+    console.log('sample cookie:', cookieOpts)
+  }
   if (response.status === 401 && response.headers.get('X-Authenticate-MFA') === 'true') {
     const flowId = response.headers.get('X-MFA-Flow-ID')
     const challenge = response.headers.get('X-MFA-Challenge')
-    const secure = process.env.APP_HOST?.startsWith('https://') || process.env.APP_ENV !== 'local'
-    const expiry = 300*1e3 // 5m
-    const cookieOpts = {
-      secure,
-      httpOnly: true,
-      path: '/',
-      sameSite: 'lax',
-      domain: process.env.APP_DOMAIN ?? '',
-      expires: Date.now()+expiry,
-    }
-    if (!isProd()) {
-      console.log('sample cookie:', cookieOpts)
-    }
     $cookies.set('mfa_challenge', challenge ?? '', cookieOpts as any)
     $cookies.set('mfa_flow_id', flowId ?? '', cookieOpts as any)
     const data = await loginPasskeyMFA(email)
@@ -434,13 +434,7 @@ export async function loginUser(email: string, idToken: string): Promise<{ ok: b
   }
   const { token, error } = await response.json()
   if (token) {
-    $cookies.set('token', token, {
-      secure: process.env.APP_ENV !== 'local',
-      path: '/',
-      sameSite: 'lax',
-      domain: process.env.APP_HOST,
-      expires: Date.now() + 86_400_000,
-    })
+    $cookies.set('token', token, cookieOpts as any)
   }
   return {
     ok: false,

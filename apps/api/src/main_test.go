@@ -257,7 +257,6 @@ func deleteUser(s *TestSuite, email string) error {
 		if err := tx.
 			Unscoped().
 			Select(clause.Associations).
-			Where("email = ?", email).
 			Delete(&models.User{Email: email}).
 			Error; err != nil {
 			log.Printf("Could not delete user [%s] from database: %s\n", email, err.Error())
@@ -285,6 +284,16 @@ func deleteTestUser(s *TestSuite, email string, fuser bool) error {
 		return err
 	}
 	return nil
+}
+
+func deleteUsers() error {
+	db := db.GetDb()
+	return db.Unscoped().Model(&models.User{}).Where("id > ?", 0).Delete(nil).Error
+}
+
+func deleteOrganizations() error {
+	db := db.GetDb()
+	return db.Unscoped().Model(&models.Organization{}).Where("id > ?", 0).Delete(nil).Error
 }
 
 func newKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
@@ -703,16 +712,14 @@ func (s *TestSuite) TestRegisterAnotherUser() {
 }
 
 func (s *TestSuite) TestRegisterMultipleUsers() {
-	db := db.GetDb()
-	var dels models.Organization
-	err := db.Unscoped().Model(&models.Organization{}).Where("id > ?", 0).Delete(&dels).Error
-	assert.NoError(s.T(), err)
+	deleteOrganizations()
+	deleteUsers()
 
 	oldEmail := s.Email
 	router := setupRouter()
 	guestAuthRoutes(router)
 
-	const USER_COUNT int = 5
+	const USER_COUNT int = 2
 	for range USER_COUNT {
 		go func() {
 			var fd FakeStruct

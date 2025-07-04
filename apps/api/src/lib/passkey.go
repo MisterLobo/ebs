@@ -15,11 +15,10 @@ var webAuthn *webauthn.WebAuthn
 func InitWebAuthn(timeout time.Duration, debug bool) error {
 	wconfig := &webauthn.Config{
 		RPDisplayName: "Silver Elven",
-		RPID:          config.API_DOMAIN,
+		RPID:          config.APP_DOMAIN,
 		RPOrigins: []string{
 			config.API_HOST,
 			config.APP_HOST,
-			"https://localhost:9090",
 		},
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			AuthenticatorAttachment: protocol.AuthenticatorAttachment("cross-platform"),

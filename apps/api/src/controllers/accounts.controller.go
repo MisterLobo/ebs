@@ -43,9 +43,6 @@ func AccountsPasskeyRegisterStart(ctx *gin.Context) (opts *protocol.CredentialCr
 	opts, ses, err := wa.BeginRegistration(
 		user,
 		webauthn.WithAuthenticatorSelection(wa.Config.AuthenticatorSelection),
-		webauthn.WithAttestationFormats([]protocol.AttestationFormat{
-			protocol.AttestationFormatAndroidKey,
-		}),
 	)
 	if err != nil {
 		log.Printf("Failed to begin registration: %s\n", err.Error())

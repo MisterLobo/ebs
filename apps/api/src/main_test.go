@@ -712,22 +712,23 @@ func (s *TestSuite) TestRegisterMultipleUsers() {
 
 	const USER_COUNT int = 5
 	for range USER_COUNT {
-		var fd FakeStruct
-		faker.FakeData(&fd)
-		email := fd.Email
-		_, err := createFirebaseUser(s, email)
-		assert.NoError(s.T(), err)
-
-		w := httptest.NewRecorder()
-
-		jbody := map[string]any{
-			"email": email,
-		}
-		sbody, _ := json.Marshal(&jbody)
-
-		token, err := newFirebaseJWT(*s.UID)
-		assert.NoError(s.T(), err)
 		go func() {
+			var fd FakeStruct
+			faker.FakeData(&fd)
+			email := fd.Email
+			_, err := createFirebaseUser(s, email)
+			assert.NoError(s.T(), err)
+
+			w := httptest.NewRecorder()
+
+			jbody := map[string]any{
+				"email": email,
+			}
+			sbody, _ := json.Marshal(&jbody)
+
+			token, err := newFirebaseJWT(*s.UID)
+			assert.NoError(s.T(), err)
+
 			defer deleteTestUser(s, email, true)
 			registerReq, _ := http.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(string(sbody)))
 			registerReq.Header.Set("Authorization", token)

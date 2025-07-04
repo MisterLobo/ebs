@@ -334,12 +334,11 @@ func DownloadServiceKeyFromS3() error {
 func DownloadFileFromS3(filename, localpath, bucket string, overwriteIfExists bool) error {
 	_, err := os.Stat(localpath)
 	if errors.Is(err, os.ErrNotExist) || (err == nil && overwriteIfExists) {
-		log.Printf("Downloading file key=%s bucket=%s\n", filename, bucket)
+		log.Printf("Downloading file key=%s bucket=%s to=%s\n", filename, bucket, localpath)
 		client := lib.AWSGetS3Client()
-		adminSdkObjectKey := filename
 		object, err := client.GetObject(context.Background(), &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
-			Key:    aws.String(adminSdkObjectKey),
+			Key:    aws.String(filename),
 		})
 		if err != nil {
 			log.Printf("[S3] Error retrieving object: %s\n", err.Error())

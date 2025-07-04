@@ -20,7 +20,6 @@ func InitWebAuthn(timeout time.Duration, debug bool) error {
 			config.API_HOST,
 			config.APP_HOST,
 			"https://localhost:9090",
-			"https://localhost",
 		},
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			AuthenticatorAttachment: protocol.AuthenticatorAttachment("cross-platform"),

@@ -413,32 +413,19 @@ export async function loginUser(email: string, idToken: string): Promise<{ ok: b
     const challenge = response.headers.get('X-MFA-Challenge')
     const secure = process.env.APP_HOST?.startsWith('https://') || process.env.APP_ENV !== 'local'
     const expiry = 300*1e3 // 5m
-    if (!isProd()) {
-      console.log('sample cookie:', {
-        secure,
-        httpOnly: true,
-        path: '/',
-        sameSite: 'lax',
-        domain: process.env.APP_DOMAIN,
-        expires: Date.now()+expiry,
-      })
+    const cookieOpts = {
+      secure,
+      httpOnly: true,
+      path: '/',
+      sameSite: 'lax',
+      domain: process.env.APP_DOMAIN ?? '',
+      expires: Date.now()+expiry,
     }
-    $cookies.set('mfa_challenge', challenge ?? '', {
-      secure,
-      httpOnly: true,
-      path: '/',
-      sameSite: 'lax',
-      domain: process.env.APP_DOMAIN,
-      expires: Date.now()+expiry,
-    })
-    $cookies.set('mfa_flow_id', flowId ?? '', {
-      secure,
-      httpOnly: true,
-      path: '/',
-      sameSite: 'lax',
-      domain: process.env.APP_DOMAIN,
-      expires: Date.now()+expiry,
-    })
+    if (!isProd()) {
+      console.log('sample cookie:', cookieOpts)
+    }
+    $cookies.set('mfa_challenge', challenge ?? '', cookieOpts as any)
+    $cookies.set('mfa_flow_id', flowId ?? '', cookieOpts as any)
     const data = await loginPasskeyMFA(email)
     return {
       ...data,

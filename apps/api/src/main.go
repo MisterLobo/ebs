@@ -224,11 +224,33 @@ func publicRoutes(g *gin.Engine) *gin.RouterGroup {
 		})
 
 	passkey := apiv1.Group("/passkey")
+	passkey.Use(middlewares.VerifyIdToken)
+	passkey.Use(func(ctx *gin.Context) {
+		authMFA := ctx.Request.Header.Get("X-Authenticate-MFA")
+		log.Printf("X-Authenticate-MFA: %s", authMFA)
+		if authMFA != "true" {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Access denied"})
+			return
+		}
+		if ctx.Request.Header.Get("X-MFA-Flow-ID") == "" {
+			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
+		flowId := ctx.Request.Header.Get("X-MFA-Flow-ID")
+		if err := uuid.Validate(flowId); err != nil {
+			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
+	})
 	passkey.
 		POST("/login/start", func(ctx *gin.Context) {
 			opts, status, err := controllers.PasskeyLoginStart(ctx.Copy())
 			if err != nil {
 				log.Printf("Error on PasskeyLoginStart: %s\n", err.Error())
+				ctx.Status(status)
+				return
+			}
+			if status != http.StatusOK {
 				ctx.Status(status)
 				return
 			}
@@ -238,6 +260,13 @@ func publicRoutes(g *gin.Engine) *gin.RouterGroup {
 			token, status, err := controllers.PasskeyLoginFinish(ctx.Copy())
 			if err != nil {
 				log.Printf("Error on PasskeyLoginFinish: %s\n", err.Error())
+				if status >= http.StatusBadRequest && status <= http.StatusInternalServerError {
+					ctx.JSON(status, gin.H{"error": err.Error()})
+				}
+				ctx.Status(status)
+				return
+			}
+			if status != http.StatusOK {
 				ctx.Status(status)
 				return
 			}
@@ -454,8 +483,12 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 				ctx.Status(status)
 				return
 			}
+			if status != http.StatusOK {
+				ctx.Status(status)
+				return
+			}
 
-			ctx.JSON(http.StatusOK, gin.H{
+			ctx.JSON(status, gin.H{
 				"token": token,
 			})
 		}).

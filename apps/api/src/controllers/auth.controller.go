@@ -2,11 +2,14 @@ package controllers
 
 import (
 	"context"
+	"crypto/rand"
+	"ebs/src/config"
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
 	"ebs/src/types"
 	"ebs/src/utils"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -14,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v82"
 	"gorm.io/gorm"
 )
@@ -46,13 +50,14 @@ func AuthLogin(ctx *gin.Context) (token *string, status int, err error) {
 		return nil, http.StatusNotFound, err
 	}
 
+	uid := ctx.GetString("uid")
+	rd := lib.GetRedisClient()
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := db.
 			Model(&models.User{}).
 			Where("id", muser.ID).
 			Update("last_active", time.Now()).
 			Error; err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return err
 		}
 		return nil
@@ -60,24 +65,43 @@ func AuthLogin(ctx *gin.Context) (token *string, status int, err error) {
 	if err != nil {
 		log.Printf("Error logging in user [%d]: %s\n", muser.ID, err.Error())
 		ctx.Status(http.StatusBadRequest)
-		return
+		return nil, http.StatusBadRequest, err
 	}
 	err = utils.GetCredentials(&muser)
 	if err != nil {
 		log.Printf("Could not retrieve credentials for user [%d]: %s\n", muser.ID, err.Error())
-		ctx.Status(http.StatusBadRequest)
-		return
+		return nil, http.StatusBadRequest, err
 	}
-	if len(muser.StoredCredentials) > 0 {
-		ctx.Header("X-Authenticate", "mfa")
-		ctx.Status(http.StatusOK)
-		return
+	if ctx.Request.Header.Get("origin") != "app:mobile" && len(muser.StoredCredentials) > 0 {
+		flowId := uuid.NewString()
+		bNonce := make([]byte, 32)
+		rand.Read(bNonce)
+		secret, _ := hex.DecodeString(config.API_SECRET)
+		nonce := hex.EncodeToString(bNonce)
+		enc, err := utils.EncryptMessage(secret, nonce)
+		if err != nil {
+			log.Printf("Error encrypting message: %s\n", err.Error())
+			return nil, http.StatusInternalServerError, err
+		}
+		rd.JSONSet(ctx, fmt.Sprintf("%s:mfa_state", user.UID), "$", &map[string]any{
+			"nonce":     enc,
+			"state":     "pending",
+			"flow_id":   flowId,
+			"user_id":   int(muser.ID),
+			"timestamp": time.Now().UnixMilli(),
+		})
+		exp := 5 * time.Minute
+		rd.Expire(ctx, "", exp)
+		rd.Set(ctx, fmt.Sprintf("%d:mfa_state", muser.ID), fmt.Sprintf("%s:mfa_state", user.UID), exp)
+		ctx.Header("X-Authenticate-MFA", "true")
+		ctx.Header("X-MFA-Flow-ID", flowId)
+		ctx.Header("X-MFA-Challenge", nonce)
+		log.Println("Credentials found: initializing secondary auth")
+		return nil, http.StatusUnauthorized, nil
 	}
 
 	jwt, _ := utils.GenerateJWT(user.Email, muser.ID, muser.ActiveOrg)
 
-	uid := ctx.GetString("uid")
-	rd := lib.GetRedisClient()
 	_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:user", muser.ID), "$", &muser).Result()
 	if err != nil {
 		log.Printf("[redis] Error updating user cache: %s\n", err.Error())

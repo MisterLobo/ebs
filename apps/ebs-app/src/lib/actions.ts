@@ -396,7 +396,6 @@ export async function registerUser(email: string, idToken: string) {
 }
 
 export async function loginUser(email: string, idToken: string): Promise<{ ok: boolean, publicKey?: any, error?: string, status: number }> {
-  console.log(`${process.env.API_HOST}/auth/login`)
   const response = await fetch(`${process.env.API_HOST}/auth/login`, {
     headers: {
       'Authorization': idToken,
@@ -406,7 +405,29 @@ export async function loginUser(email: string, idToken: string): Promise<{ ok: b
       email,
     }),
   })
-  if (response.headers.has('x-authenticate')) {
+  const $cookies = await cookies()
+  $cookies.set('id_token', idToken)
+  if (response.status === 401 && response.headers.get('X-Authenticate-MFA') === 'true') {
+    const flowId = response.headers.get('X-MFA-Flow-ID')
+    const challenge = response.headers.get('X-MFA-Challenge')
+    const secure = process.env.APP_HOST?.startsWith('https://') || process.env.APP_ENV !== 'local'
+    const expiry = 300*1e3 // 5m
+    $cookies.set('mfa_challenge', challenge ?? '', {
+      secure,
+      httpOnly: true,
+      path: '/',
+      sameSite: 'lax',
+      domain: process.env.APP_DOMAIN,
+      expires: Date.now()+expiry,
+    })
+    $cookies.set('mfa_flow_id', flowId ?? '', {
+      secure,
+      httpOnly: true,
+      path: '/',
+      sameSite: 'lax',
+      domain: process.env.APP_DOMAIN,
+      expires: Date.now()+expiry,
+    })
     const data = await loginPasskeyMFA(email)
     return {
       ...data,
@@ -415,7 +436,6 @@ export async function loginUser(email: string, idToken: string): Promise<{ ok: b
   }
   const { token, error } = await response.json()
   if (token) {
-    const $cookies = await cookies()
     $cookies.set('token', token, {
       secure: process.env.APP_ENV !== 'local',
       path: '/',
@@ -1186,10 +1206,19 @@ export async function loginPasskeyMFA(email: string, creds?: { [key:string]: any
   } else if (step === 'finish') {
     url.searchParams.set('email', email)
   }
+  const $cookies = await cookies()
+  const ftoken = $cookies.get('id_token')?.value
+  const challenge = $cookies.get('mfa_challenge')?.value
+  const flowId = $cookies.get('mfa_flow_id')?.value
+  const headers = {
+    'Authorization': `${ftoken}`,
+    'Content-Type': 'application/json',
+    'X-MFA-Flow-ID': flowId,
+    'X-Authenticate-MFA': 'true',
+    'X-MFA-Challenge': challenge,
+  }
   const requestInit = {
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     method: 'POST',
     body: JSON.stringify(body),
   } as RequestInit
@@ -1219,6 +1248,10 @@ export async function loginPasskeyMFA(email: string, creds?: { [key:string]: any
     publicKey.allowCredentials = allowCredentials
     return { ok: true, publicKey }
   } else if (step === 'finish') {
+    $cookies
+      .delete('id_token')
+      .delete('mfa_flow_id')
+      .delete('mfa_challenge')
     if (token) {
       const secure = process.env.APP_HOST?.startsWith('https://') || process.env.APP_ENV !== 'local'
       const $cookies = await cookies()
@@ -1339,4 +1372,8 @@ export async function getCalendar(id: number): Promise<string | null> {
   }
   const { url } = await response.json()
   return url
+}
+
+export const tokenRetrieved = async (token: string) => {
+  await subscribeToFCMTopics(token, 'EventSubscription', 'Events', 'Personal')
 }

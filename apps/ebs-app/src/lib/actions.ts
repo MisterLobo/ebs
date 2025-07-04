@@ -6,6 +6,7 @@ import { notFound, redirect } from 'next/navigation'
 import { TurnstileServerValidationResponse } from '@marsidev/react-turnstile'
 import { Stripe } from 'stripe'
 import getStripeApiClient from './stripe.server'
+import { isProd } from './utils'
 
 export async function getActiveOrganization(): Promise<Organization | null> {
   const $cookies = await cookies()
@@ -412,6 +413,16 @@ export async function loginUser(email: string, idToken: string): Promise<{ ok: b
     const challenge = response.headers.get('X-MFA-Challenge')
     const secure = process.env.APP_HOST?.startsWith('https://') || process.env.APP_ENV !== 'local'
     const expiry = 300*1e3 // 5m
+    if (!isProd()) {
+      console.log('sample cookie:', {
+        secure,
+        httpOnly: true,
+        path: '/',
+        sameSite: 'lax',
+        domain: process.env.APP_DOMAIN,
+        expires: Date.now()+expiry,
+      })
+    }
     $cookies.set('mfa_challenge', challenge ?? '', {
       secure,
       httpOnly: true,

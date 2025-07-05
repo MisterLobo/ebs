@@ -7,6 +7,7 @@ import (
 	"ebs/src/middlewares"
 	"ebs/src/models"
 	"ebs/src/types"
+	"ebs/src/utils"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -280,7 +281,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					}
 					cli := lib.AWSGetSQSClient()
 					qurl, err := cli.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{
-						QueueName: aws.String("PaymentTransactionUpdates"),
+						QueueName: aws.String(utils.WithSuffix("PaymentTransactionUpdates")),
 					})
 					if err != nil {
 						log.Printf("Error retrieving queue URL: %s\n", err.Error())
@@ -422,7 +423,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					if apiEnv == string(types.Test) || apiEnv == string(types.Production) {
 						cli := lib.AWSGetSQSClient()
 						qurl, err := cli.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{
-							QueueName: aws.String("PaymentTransactionUpdates"),
+							QueueName: aws.String(utils.WithSuffix("PaymentTransactionUpdates")),
 						})
 						if err != nil {
 							log.Printf("Error retrieving queue URL: %s\n", err.Error())

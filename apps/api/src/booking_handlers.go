@@ -156,7 +156,8 @@ func bookingHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			}
 			db := db.GetDb()
 			err := db.Transaction(func(tx *gorm.DB) error {
-				if body.Type == "transaction" {
+				switch body.Type {
+				case "transaction":
 					if err := tx.
 						Model(&models.Transaction{}).
 						Where("id = ?", body.TxnID).
@@ -191,9 +192,9 @@ func bookingHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 						log.Printf("Could not update Reservation for Booking %v: %s\n", bIds, err.Error())
 						return err
 					}
-				} else if body.Type == "reservation" {
+				case "reservation":
 					return errors.New("updating status for individual Booking is not allowed")
-				} else {
+				default:
 					err := errors.New("invalid type")
 					return err
 				}

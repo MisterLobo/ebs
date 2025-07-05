@@ -159,16 +159,16 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 				log.Printf("Could not decode Calendar ID from base64 string: %s\n", err.Error())
 				return
 			}
-			eventStartDate := event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT)
+			/* eventStartDate := event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT)
 			if !params.Publish && params.Mode == "scheduled" && opens_at != nil {
 				eventStartDate = event.OpensAt.Format(config.GAPI_TIME_PARSE_FORMAT)
-			}
+			} */
 			err = lib.GAPIAddEvent(string(calID), &calendar.Event{
 				Id:       calEventID,
 				Summary:  event.Title,
 				Location: event.Location,
 				Start: &calendar.EventDateTime{
-					DateTime: eventStartDate,
+					DateTime: event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT),
 					TimeZone: event.Timezone,
 				},
 				End: &calendar.EventDateTime{

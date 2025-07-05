@@ -38,6 +38,5 @@ func VerifyIdToken(ctx *gin.Context) {
 
 	rd.Set(context.Background(), fmt.Sprintf("%s:token", token.UID), idToken, 24*time.Hour)
 	rd.JSONSet(context.Background(), token.UID, "$", token)
-	// rd.ExpireAt(context.Background(), token.UID, time.Unix(token.Expires, 0))
 	ctx.Set("uid", token.UID)
 }

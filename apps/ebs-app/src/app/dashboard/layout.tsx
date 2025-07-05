@@ -25,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   return (
     <>
     <SidebarProvider>
-      <AppSidebar teams={orgs} />
+      <AppSidebar teams={orgs} className="bg-background" />
       <SidebarInset>
         {!isProd() && <TestEnvironmentAlert />}
         {(!completed && !account_id) &&

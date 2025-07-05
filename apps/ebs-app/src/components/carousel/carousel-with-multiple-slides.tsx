@@ -45,7 +45,7 @@ export default function CarouselWithMultipleSlides({
               <div className="p-1 space-y-1">
                 <AspectRatio ratio={16 / 9}>
                   <Image
-                    src="https://files.vidstack.io/sprite-fight/poster.webp"
+                    src=""
                     alt="Featured video thumbnail"
                     fill
                     objectFit="cover"

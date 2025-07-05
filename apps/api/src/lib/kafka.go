@@ -11,14 +11,6 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-func GetKafkaProducerConfig() kafka.ConfigMap {
-	return kafka.ConfigMap{
-		"bootstrap.servers": os.Getenv("KAFKA_BROKER"),
-		"client.id":         "myProducer",
-		"acks":              "all",
-	}
-}
-
 func GetKafkaConsumerConfig() kafka.ConfigMap {
 	return kafka.ConfigMap{
 		"bootstrap.servers": os.Getenv("KAFKA_BROKER"),

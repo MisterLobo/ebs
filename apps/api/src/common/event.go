@@ -2,21 +2,27 @@ package common
 
 import (
 	"context"
+	"ebs/src/config"
 	"ebs/src/db"
 	"ebs/src/lib"
 	"ebs/src/models"
 	"ebs/src/types"
 	"ebs/src/utils"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	awslib "ebs/src/lib/aws"
 	"ebs/src/lib/mailer"
 
 	"firebase.google.com/go/v4/messaging"
+	"github.com/gookit/goutil/dump"
 	"github.com/tidwall/gjson"
+	"golang.org/x/oauth2"
+	"google.golang.org/api/calendar/v3"
 	"gorm.io/gorm"
 )
 
@@ -25,7 +31,7 @@ type Plucked struct {
 	UID   string
 }
 
-func subscribeAndSendToTopic(event *models.Event, name string, unsubAfter bool, plucked ...*Plucked) {
+func subscribeAndSendToTopic(event *models.Event, topic string, unsubAfter bool, plucked ...*Plucked) {
 	ctx := context.Background()
 	fcmTokens := make([]string, 0)
 	rd := lib.GetRedisClient()
@@ -34,7 +40,6 @@ func subscribeAndSendToTopic(event *models.Event, name string, unsubAfter bool, 
 		value := rd.JSONGet(ctx, key, "$.token").Val()
 		fcmTokens = append(fcmTokens, value)
 	}
-	topic := name
 	fcm, _ := lib.GetFirebaseMessaging()
 	res, err := fcm.Send(ctx, &messaging.Message{
 		Topic: topic,
@@ -95,8 +100,12 @@ func sendOpenEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToOpen_%d", eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToOpen_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),
@@ -105,6 +114,7 @@ func sendOpenEventNotifications(eventId uint) {
 		To: []string{
 			event.Creator.Email,
 		},
+		Bcc: emails,
 		Body: fmt.Sprintf(`
 			<p>Registration for Event <b>%s</b> is now open</p>
 			<p>What: %s</p>
@@ -163,6 +173,68 @@ func KafkaEventsToOpenConsumer(spayload string) {
 			return
 		}
 	}()
+	go func() {
+		var tok models.Token
+		var event models.Event
+		db := db.GetDb()
+		if err := db.
+			Where(&models.Event{ID: eventId}).
+			Preload("Organization").
+			First(&event).
+			Error; err != nil {
+			if event.Organization.CalendarID == nil {
+				log.Printf("No calendar set for Organizer for Event [%d]. Aborting", eventId)
+				return
+			}
+		}
+		if event.CalEventID == nil {
+			log.Printf("EventId not set for Event [%d]", eventId)
+			return
+		}
+		if err := db.
+			Where(&models.Token{
+				Type:          "AccessToken",
+				TokenName:     "calendar_token",
+				RequestedBy:   event.OrganizerID,
+				RequesterType: "org",
+				Status:        "active",
+			}).
+			First(&tok).
+			Error; err != nil {
+			log.Printf("Could not retrieve session for Org [%d]: %s\n", event.OrganizerID, err.Error())
+			return
+		}
+		tokmd := *tok.Metadata
+		raw := tokmd["raw"]
+		dump.P(raw)
+		var token oauth2.Token
+		tokb, _ := json.Marshal(raw)
+		if err := json.NewDecoder(strings.NewReader(string(tokb))).Decode(&token); err != nil {
+			log.Printf("Could not construct Oauth2 Token from data: %s\n", err.Error())
+			return
+		}
+		calID, err := base64.RawURLEncoding.DecodeString(*event.Organization.CalendarID)
+		if err != nil {
+			log.Printf("Could not decode Calendar ID from base64 string: %s\n", err.Error())
+			return
+		}
+		svc, err := lib.GAPICreateCalendarService(context.Background(), &token, nil)
+		if err != nil {
+			log.Printf("Failed to create Calendar service for Org [%d]: %s\n", event.OrganizerID, err.Error())
+			return
+		}
+		err = lib.GAPIUpdateEvent(string(calID), &calendar.Event{
+			Id:     *event.CalEventID,
+			Status: "confirmed",
+			End: &calendar.EventDateTime{
+				DateTime: event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT),
+				TimeZone: event.Timezone,
+			},
+		}, svc)
+		if err != nil {
+			log.Printf("Failed to update Event in Calendar: id=%s err=%s\n", *event.CalEventID, err.Error())
+		}
+	}()
 	go sendOpenEventNotifications(eventId)
 	// UPDATE JOB
 	go func() {
@@ -182,7 +254,6 @@ func KafkaEventsToOpenConsumer(spayload string) {
 
 func sendClosedEventNotifications(eventId uint) {
 	var event models.Event
-	var emails []string
 	var plucked []*Plucked
 	db := db.GetDb()
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -218,8 +289,12 @@ func sendClosedEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToClose_%d", eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToClose_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),
@@ -229,7 +304,6 @@ func sendClosedEventNotifications(eventId uint) {
 		To: []string{
 			event.Creator.Email,
 		},
-		ReplyTo: event.Organization.ContactEmail,
 		Body: fmt.Sprintf(`
 			<p>Registration for Event <b>%s</b> is now closed. Ticket admissions are now open</p>
 			<p>Event Details</p>
@@ -288,7 +362,6 @@ func KafkaEventsToCloseConsumer(spayload string) {
 
 func sendCompletedEventNotifications(eventId uint) {
 	var event models.Event
-	var emails []string
 	var plucked []*Plucked
 	db := db.GetDb()
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -324,8 +397,12 @@ func sendCompletedEventNotifications(eventId uint) {
 		return
 	}
 
-	go subscribeAndSendToTopic(&event, fmt.Sprintf("EventsToComplete_%d", eventId), true, plucked...)
+	go subscribeAndSendToTopic(&event, utils.WithSuffix(fmt.Sprintf("EventsToComplete_%d", eventId)), true, plucked...)
 
+	var emails []string
+	for _, pluck := range plucked {
+		emails = append(emails, pluck.Email)
+	}
 	senderFrom := os.Getenv("SMTP_FROM")
 	input := &lib.SendMailInput{
 		Subject:  fmt.Sprintf("Silver Elven Event Notification: %s", event.Title),
@@ -335,7 +412,6 @@ func sendCompletedEventNotifications(eventId uint) {
 		To: []string{
 			event.Creator.Email,
 		},
-		ReplyTo: event.Organization.ContactEmail,
 		Body: fmt.Sprintf(`
 			<p>Ticket admission for Event <b>%s</b> is now closed.</p>
 			<p>Event Details</p>
@@ -395,7 +471,7 @@ func KafkaEventsToCompleteConsumer(spayload string) {
 }
 
 func EventsToOpenConsumer() {
-	qname := "EventsToOpen"
+	qname := utils.WithSuffix("EventsToOpen")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
@@ -457,7 +533,7 @@ func EventsToOpenConsumer() {
 }
 
 func EventsToCloseConsumer() {
-	qname := "EventsToClose"
+	qname := utils.WithSuffix("EventsToClose")
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
 			log.Printf("[%s]: Received invalid json body. Aborting", qname)
@@ -518,7 +594,7 @@ func EventsToCloseConsumer() {
 }
 
 func EventsToCompleteConsumer() {
-	qname := "EventsToComplete"
+	qname := utils.WithSuffix("EventsToComplete")
 	log.Printf("%s: Listening for messages...", qname)
 	c := awslib.NewSQSConsumer(qname, func(body string) {
 		if !gjson.Valid(body) {
@@ -579,7 +655,7 @@ func EventsToCompleteConsumer() {
 	c.Listen()
 }
 
-func EmailsToSendConsumer(spayload string) {
+func KafkaEmailsToSendConsumer(spayload string) {
 	if !gjson.Valid(spayload) {
 		log.Println("Received invalid json body. Aborting")
 		return
@@ -630,3 +706,99 @@ func EmailsToSendConsumer(spayload string) {
 		log.Printf("[MAILER]: an email has been sent to %s\n", to)
 	}()
 }
+
+func EmailsToSendConsumer() {
+	qname := utils.WithSuffix("EmailsToSend")
+	log.Printf("%s: Listening for messages...", qname)
+	c := awslib.NewSQSConsumer(qname, func(spayload string) {
+		if !gjson.Valid(spayload) {
+			log.Printf("[%s]: Received invalid json body. Aborting", qname)
+			return
+		}
+		from := gjson.Get(spayload, "from").String()
+		fromName := gjson.Get(spayload, "from-name").String()
+		subject := gjson.Get(spayload, "subject").String()
+		log.Printf("from [%s] with subject: %s\n", from, subject)
+
+		toArr := gjson.Get(spayload, "to").Array()
+		to := make([]string, 0)
+		for _, item := range toArr {
+			to = append(to, item.String())
+		}
+		ccArr := gjson.Get(spayload, "cc").Array()
+		cc := make([]string, 0)
+		for _, item := range ccArr {
+			cc = append(cc, item.String())
+		}
+		bccArr := gjson.Get(spayload, "bcc").Array()
+		bcc := make([]string, 0)
+		for _, item := range bccArr {
+			bcc = append(bcc, item.String())
+		}
+		replyTo := gjson.Get(spayload, "reply-to").String()
+		var body types.JSONB
+		if err := json.Unmarshal([]byte(spayload), &body); err != nil {
+			log.Printf("error deserializing json: %s\n", err.Error())
+			return
+		}
+		go func() {
+			input := &lib.SendMailInput{
+				From:     from,
+				FromName: fromName,
+				To:       to,
+				Cc:       cc,
+				Bcc:      bcc,
+				ReplyTo:  replyTo,
+				Subject:  body["subject"].(string),
+				Body:     body["body"].(string),
+				Html:     body["html"].(bool),
+			}
+			if err := lib.SendMail(input); err != nil {
+				log.Printf("[MAILER] error sending email: %s\n", err.Error())
+				return
+			}
+			log.Printf("[MAILER]: an email has been sent to %s\n", to)
+		}()
+	})
+	c.Listen()
+}
+
+func EventOpenProducer(id uint, payload types.JSONB) error {
+	err := lib.KafkaProduceMessage("events_open_producer", "events-open", &payload)
+	if err != nil {
+		log.Printf("Error on producing message: %s\n", err.Error())
+		return err
+	}
+	return nil
+}
+
+func EventCloseProducer(id uint, payload types.JSONB) error {
+	err := lib.KafkaProduceMessage("events_close_producer", "events-close", &payload)
+	if err != nil {
+		log.Printf("Error on producting message: %s\n", err.Error())
+		return err
+	}
+	return nil
+}
+
+func KafkaRetryConsumer(spayload string) {
+	if !gjson.Valid(spayload) {
+		log.Println("Received invalid json body. Aborting")
+		return
+	}
+	var payload types.JSONB
+	if err := json.Unmarshal([]byte(spayload), &payload); err != nil {
+		log.Printf("[KafkaRetryConsumer] Error deserializing json: %s\n", err.Error())
+		return
+	}
+	sbody := gjson.Get(spayload, "body").String()
+	h := payload["h"].(*types.Handler)
+	ha := *h
+	ha(sbody)
+	var body types.JSONB
+	if err := json.Unmarshal([]byte(sbody), &body); err != nil {
+		log.Printf("[KafkaRetryConsumer] Error deserializing json: %s\n", err.Error())
+		return
+	}
+}
+func RetryConsumer() {}

@@ -48,3 +48,6 @@ out
 test-output
 
 .env*
+.firebase
+certificates
+certs

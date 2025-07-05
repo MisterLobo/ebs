@@ -24,6 +24,21 @@ type JobTask struct {
 	SourceType    string      `json:"-"`
 	Status        string      `gorm:"default:'pending'" json:"-"`
 	Topic         string      `json:"-"`
+	Timezone      string      `gorm:"default:'UTC'" json:"timezone"`
+
+	types.Timestamps
+}
+
+func (j *JobTask) AfterFind(tx *gorm.DB) error {
+	if j.Timezone != "" {
+		r := j.RunsAt
+		l, err := time.LoadLocation(j.Timezone)
+		if err != nil {
+			return err
+		}
+		j.RunsAt = r.In(l)
+	}
+	return nil
 }
 
 func (j *JobTask) CreateAndEnqueueJobTask(jobTask JobTask) (string, error) {

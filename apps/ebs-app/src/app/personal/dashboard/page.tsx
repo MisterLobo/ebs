@@ -5,7 +5,7 @@ import { PersonalDashboardClient } from './client'
 
 export default async function PersonalDashboard() {
   return (
-    <main className="p-6">
+    <main className="p-6 container">
       <h1 className="text-3xl font-semibold">My Dashboard</h1>
       <Suspense fallback={
         <>

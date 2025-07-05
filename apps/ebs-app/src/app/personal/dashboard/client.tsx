@@ -16,7 +16,7 @@ import { formatDistance } from 'date-fns'
 
 function ReservationCard({ data }: { data: Booking }) {
   return (
-    <Card className="w-3xl h-auto">
+    <Card className="w-full max-w-3xl h-auto">
       <CardHeader>
         <h3 className="text-xl">{ data.event?.title }</h3>
         <p>Created { formatDistance(new Date(data?.created_at as string), Date.now(), { addSuffix: true, includeSeconds: true }) }</p>
@@ -139,13 +139,13 @@ export function PersonalDashboardClient() {
     <h2 className="text-xl">Reservations: { reservations?.length }</h2>
     {error && <h2 className="text-red-500">Error: { error }</h2>}
     <div className="flex flex-col gap-4 items-center justify-center">
-      <Tabs defaultValue="completed">
+      <Tabs defaultValue="completed" className="max-w-3xl w-full">
         <TabsList className="w-fit">
           <TabsTrigger value="completed">Completed</TabsTrigger>
           <TabsTrigger value="pending">Pending</TabsTrigger>
           <TabsTrigger value="Canceled">Canceled</TabsTrigger>
         </TabsList>
-        <TabsContent value="completed" className="w-3xl h-auto">
+        <TabsContent value="completed" className="w-full h-auto">
           <Accordion type="single" collapsible defaultValue="upcoming">
             <AccordionItem value="upcoming">
               <AccordionTrigger>Upcoming</AccordionTrigger>

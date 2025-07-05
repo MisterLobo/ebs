@@ -1,20 +1,21 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { cfSiteverify, loginUser } from '@/lib/actions'
+import { cfSiteverify, loginUser, loginPasskeyMFA } from '@/lib/actions'
 import { auth, provider } from '@/lib/firebase'
 import { signInWithPopup } from 'firebase/auth'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
+import { toast } from 'sonner'
 
 export default function LoginForm() {
   const router = useRouter()
   const [error, setError] = useState<string>()
 	const [token, setToken] = useState<string>()
 	const turnstileRef = useRef<TurnstileInstance>(null)
-  const login = async () => {
+  const loginWithGoogle = useCallback(async () => {
     setError(undefined)
     if (turnstileRef.current?.isExpired()) {
       setError('token has expired')
@@ -28,17 +29,29 @@ export default function LoginForm() {
       const credential = await signInWithPopup(auth, provider)
       if (credential.user) {
         const idToken = await credential.user.getIdToken()
-        const { error } = await loginUser(credential.user.email as string, idToken)
+        const { error, publicKey } = await loginUser(credential.user.email as string, idToken)
         if (error) {
           setError(error)
           return
         }
-        router.push('/personal/dashboard')
+        if (publicKey) {
+          const creds = await navigator.credentials.get({ publicKey })
+          const cjson: Record<string, any> = JSON.parse(JSON.stringify(creds))
+          const { ok } = await loginPasskeyMFA(credential.user.email as string, cjson, 'finish')
+          if (!ok) {
+            toast('ERROR', {
+              description: 'Log in failed',
+            })
+            return
+          }
+          toast('You are now logged in!')
+        }
+        router.push('/')
       }
     } catch (error: any) {
       alert(error.message)
     }
-  }
+  }, [token])
 
   return (
     <div className="flex flex-col items-center h-96 min-w-lg justify-center p-4 relative border rounded-xl">
@@ -55,10 +68,10 @@ export default function LoginForm() {
             setError(undefined)
           }}
         />
-        <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none w-fit" onClick={login}>Log in with Google</Button>
+        <Button type="button" className="cursor-pointer disabled:opacity-50 disabled:pointer-events-none w-fit" onClick={loginWithGoogle}>Log in with Google</Button>
       </form>
       <div className="flex w-full items-center justify-center mt-4">
-        <span>Not a member? <Link href="/register" className="text-purple-600 font-semibold hover:underline">Register</Link> here</span>
+        <span>No account yet? <Link href="/register" className="text-purple-600 font-semibold hover:underline">Register</Link> here</span>
       </div>
     </div>
   )

@@ -27,7 +27,7 @@ export default async function BillingSettingsPage() {
           <p>Current Plan: { prod?.name.toUpperCase() }</p>
           <p>{ price?.currency.toUpperCase() } { price?.unit_amount } per { price?.recurring?.interval }</p>
           <CardAction>
-            <Button>Upgrade</Button>
+            <Button>Upgrade Plan</Button>
           </CardAction>
         </CardContent>
       </Card>
@@ -43,7 +43,7 @@ export default async function BillingSettingsPage() {
           )) : (
             <div className="flex items-center justify-center w-full flex-col gap-2">
               <p>No cards added</p>
-              <Button className="w-32">Add a Card</Button>
+              <Button className="w-48">Add a Payment Method</Button>
             </div>
           )}
         </CardContent>

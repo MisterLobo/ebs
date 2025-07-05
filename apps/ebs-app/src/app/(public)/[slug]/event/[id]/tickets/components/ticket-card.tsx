@@ -48,7 +48,7 @@ export default function TicketCard({ data }: Props) {
   }, [])
 
   return (
-    <Card className="col-span-4 min-w-96  w-full">
+    <Card className="col-span-12 xl:col-span-4 min-w-96 w-full">
       <CardHeader>
         <CardTitle className="space-x-2 uppercase">
           <span>{ data?.tier }</span>

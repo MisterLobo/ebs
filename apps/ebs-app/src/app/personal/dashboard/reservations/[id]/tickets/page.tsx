@@ -20,7 +20,7 @@ export default async function PersonalTickets() {
   const booking = data as Booking
   
   return (
-    <div className="flex flex-col w-full gap-2">
+    <div className="container flex flex-col w-full gap-2">
       <Suspense fallback={<Loader2 className="animate-spin" />}>
         <h1 className="text-4xl font-semibold">{ booking?.event?.title }</h1>
         <h3 className="text-xl">{ booking?.event?.location }</h3>

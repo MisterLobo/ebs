@@ -3,7 +3,6 @@ import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveOrganization, logout } from './lib/actions'
 import { Organization } from './lib/types'
-// import { auth as authMiddleware } from '@/auth'
 
 export const config = {
   matcher: [
@@ -13,17 +12,12 @@ export const config = {
      * - _next/static (static files)
      * - favicon.ico (favicon file)
      */
-    '/((?!api|_next/static|favicon.ico|login|register).*)',
+    '/((?!api|_next/static|favicon.ico|login|register|.well-known).*)',
   ],
 }
 
 const globalMiddlewares = {
   before: async (request, event) => {
-    /* await authMiddleware((request) => {
-      const { auth } = request
-      event.storage.set('user', auth?.user)
-    })(request, event) */
-
     const requestHeaders = new Headers(request.headers)
     const url = request.url
     requestHeaders.set('x-url', url)

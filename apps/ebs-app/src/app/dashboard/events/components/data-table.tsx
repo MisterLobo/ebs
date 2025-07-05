@@ -105,6 +105,7 @@ import {
 } from '@/components/ui/tabs'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { format } from 'date-fns'
 
 export const schema = z.object({
   id: z.number(),
@@ -177,7 +178,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     cell: ({ row }) => (
       <div className="w-32">
         <Badge variant="outline" className="px-1.5 text-muted-foreground">
-          {row.original.opensAt}
+          {row.original.opensAt && format(row.original.opensAt, 'Pp xx')}
         </Badge>
       </div>
     ),
@@ -188,7 +189,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     cell: ({ row }) => (
       <div className="w-32">
         <Badge variant="outline" className="px-1.5 text-muted-foreground">
-          {row.original.deadline}
+          {row.original.deadline && format(row.original.deadline, 'Pp xx')}
         </Badge>
       </div>
     ),
@@ -199,7 +200,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     cell: ({ row }) => (
       <div className="w-32">
         <Badge variant="outline" className="px-1.5 text-muted-foreground">
-          {row.original.dateTime}
+          {row.original.dateTime && format(row.original.dateTime, 'Pp xx')}
         </Badge>
       </div>
     ),

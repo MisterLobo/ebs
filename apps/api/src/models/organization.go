@@ -14,6 +14,7 @@ type Organization struct {
 	Name    string `json:"name,omitempty"`
 	About   string `json:"about,omitempty"`
 	Country string `json:"country,omitempty"`
+	Website string `json:"website,omitempty"`
 	// OwnerID is the ID of the User that owns this Organization
 	OwnerID uint                   `json:"owner_id,omitempty"`
 	Type    types.OrganizationType `gorm:"default:'standard'" json:"type,omitempty"`
@@ -29,6 +30,8 @@ type Organization struct {
 	Slug                 string          `gorm:"uniqueIndex:slugid" json:"slug"`
 	TenantID             *uuid.UUID      `gorm:"type:uuid" json:"-"`
 	Identifier           *string         `gorm:"<-:create" json:"resource_id"`
+	CalendarID           *string         `json:"calId,omitempty"`
+	Timezone             string          `gorm:"default:'UTC'" json:"timezone,omitempty"`
 
 	Events []Event `gorm:"foreignKey:organizer_id" json:"-"`
 	Owner  User    `gorm:"foreignKey:owner_id" json:"-"`
@@ -38,7 +41,7 @@ type Organization struct {
 
 func (o *Organization) AfterCreate(tx *gorm.DB) error {
 	newSlug := slug.Make(fmt.Sprintf("%s-%d", o.Name, o.ID))
-	if err := tx.Model(o).Update("slug", newSlug).Error; err != nil {
+	if err := tx.Model(&Organization{}).Where("id = ?", o.ID).Update("slug", newSlug).Error; err != nil {
 		return err
 	}
 	return nil

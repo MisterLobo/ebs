@@ -7,6 +7,7 @@ import (
 	"ebs/src/middlewares"
 	"ebs/src/models"
 	"ebs/src/types"
+	"ebs/src/utils"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -280,7 +281,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					}
 					cli := lib.AWSGetSQSClient()
 					qurl, err := cli.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{
-						QueueName: aws.String("PaymentTransactionUpdates"),
+						QueueName: aws.String(utils.WithSuffix("PaymentTransactionUpdates")),
 					})
 					if err != nil {
 						log.Printf("Error retrieving queue URL: %s\n", err.Error())
@@ -393,7 +394,7 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 							return err
 						}
 					}
-					appEnv := os.Getenv("APP_ENV")
+					apiEnv := os.Getenv("API_ENV")
 					txnUpdates := &models.Transaction{
 						SourceName:  "PaymentIntent",
 						SourceValue: pi.ID,
@@ -419,10 +420,10 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 					}
 					bPayload, _ := json.Marshal(txnPayload)
 					sPayload := string(bPayload)
-					if appEnv == "test" || appEnv == "prod" {
+					if apiEnv == string(types.Test) || apiEnv == string(types.Production) {
 						cli := lib.AWSGetSQSClient()
 						qurl, err := cli.GetQueueUrl(context.Background(), &sqs.GetQueueUrlInput{
-							QueueName: aws.String("PaymentTransactionUpdates"),
+							QueueName: aws.String(utils.WithSuffix("PaymentTransactionUpdates")),
 						})
 						if err != nil {
 							log.Printf("Error retrieving queue URL: %s\n", err.Error())
@@ -606,6 +607,34 @@ func stripeWebhookRoute(g *gin.Engine) *gin.RouterGroup {
 				paymentMethods = append(paymentMethods, pm)
 			}
 			ctx.JSON(http.StatusOK, gin.H{"data": &paymentMethods})
+		}).
+		POST("/payment_methods", func(ctx *gin.Context) {
+			var body struct {
+				PaymentMethodID string `json:"pm_id" binding:"required"`
+			}
+			if err := ctx.ShouldBindJSON(&body); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			userId := ctx.GetUint("id")
+			var user struct {
+				StripeCustomerId *string `json:"customer_id,omitempty"`
+			}
+			db := db.GetDb()
+			if err := db.
+				Model(&models.User{}).
+				Where(&models.User{ID: userId}).
+				Select("StripeCustomerId").
+				Scan(&user).
+				Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					ctx.Status(http.StatusNotFound)
+					return
+				}
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			ctx.Status(http.StatusNoContent)
 		})
 	return apiv1
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import {
   Carousel,
   CarouselContent,
@@ -8,18 +7,18 @@ import {
   CarouselNext,
   CarouselPrevious,
   type CarouselApi,
-} from "@/components/ui/carousel";
-import { cn } from "@/lib/utils";
-import Image from "next/image";
-import { Play } from "lucide-react";
-import { AspectRatio } from "@/components/ui/aspect-ratio";
+} from '@/components/ui/carousel'
+import { cn } from '@/lib/utils'
+import { useEffect, useState } from 'react';
+import { AspectRatio } from '../ui/aspect-ratio';
+import Image from 'next/image';
 
 export default function CarouselWithPagination({ className, showControls = true }: React.ComponentProps<'div'> & { showControls?: boolean }) {
-  const [api, setApi] = React.useState<CarouselApi>();
-  const [current, setCurrent] = React.useState(0);
-  const [count, setCount] = React.useState(0);
+  const [api, setApi] = useState<CarouselApi>();
+  const [current, setCurrent] = useState(0);
+  const [count, setCount] = useState(0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!api) {
       return;
     }
@@ -34,12 +33,12 @@ export default function CarouselWithPagination({ className, showControls = true 
 
   return (
     <div className={cn("max-w-screen-2xl", className)}>
-      <Carousel setApi={setApi} className="w-full max-w-screen-2xl">
+      <Carousel setApi={setApi} className="w-full max-w-screen-2xl h-72">
         <CarouselContent>
           {Array.from({ length: 5 }).map((_, index) => (
             <CarouselItem key={index}>
               <div
-                className="group relative aspect-video cursor-pointer overflow-hidden rounded-lg"
+                className="group relative cursor-pointer overflow-hidden rounded-lg h-72"
                 onClick={() => {}}
               >
                 <AspectRatio ratio={16 / 9}>
@@ -47,18 +46,14 @@ export default function CarouselWithPagination({ className, showControls = true 
                     src="https://images.unsplash.com/photo-1579468118864-1b9ea3c0db4a?w=800&auto=format&fit=crop&q=60"
                     alt="Featured video thumbnail"
                     fill
-                    objectFit="cover"
                     className="transition-transform duration-300 group-hover:scale-110"
                   />
                 </AspectRatio>
-                <div className="absolute inset-0 flex items-center justify-center bg-transparent bg-opacity-40">
-                  <Play className="size-16 text-white" aria-hidden="true" />
-                </div>
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black p-4">
                   <h3 className="text-xl font-semibold text-white">
-                    Master Class: Full Stack Development
+                    Latest event
                   </h3>
-                  <p className="text-sm text-gray-200">45:30 • 25K views</p>
+                  <p className="text-sm text-gray-200">Somewhere &middot; 8PM</p>
                 </div>
               </div>
             </CarouselItem>

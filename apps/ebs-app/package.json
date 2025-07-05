@@ -5,6 +5,10 @@
   "nx": {
     "name": "ebs-app"
   },
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "sdev": "next dev --turbopack --experimental-https"
+  },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/modifiers": "^9.0.0",
@@ -45,6 +49,7 @@
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.9.2",
     "input-otp": "^1.4.2",
+    "ioredis": "^5.6.1",
     "lucide-react": "^0.503.0",
     "motion": "^12.9.2",
     "next": "~15.2.4",

@@ -83,6 +83,10 @@ const data = {
           title: 'Manage Events',
           url: '/dashboard/events',
         },
+        {
+          title: 'Calendar',
+          url: '/dashboard/events/calendar',
+        },
       ],
     },
     {

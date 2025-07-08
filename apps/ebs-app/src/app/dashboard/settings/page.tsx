@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import SettingsGeneralForm from './components/forms'
 import { Loader2 } from 'lucide-react'
 import { Suspense } from 'react'
-import { getActiveOrganization } from '@/lib/actions'
+import { getActiveOrganization, listCountries } from '@/lib/actions'
 import { Button } from '@/components/ui/button'
 
 export default async function SettingsPage() {
@@ -14,7 +14,7 @@ export default async function SettingsPage() {
             <CardTitle id="general" className="text-xl">Profile</CardTitle>
           </CardHeader>
           <CardContent>
-            <SettingsGeneralForm resolver={getActiveOrganization()} />
+            <SettingsGeneralForm organizationResolver={getActiveOrganization()} countriesResolver={listCountries()} />
           </CardContent>
         </Card>
         <Card className="min-w-3xl">
@@ -23,7 +23,7 @@ export default async function SettingsPage() {
           </CardHeader>
           <CardContent>
             <Suspense fallback={<Loader2 className="animate-spin size-12" />}>
-              <p>Data unavailable</p>
+              <p>Coming Soon</p>
             </Suspense>
           </CardContent>
         </Card>

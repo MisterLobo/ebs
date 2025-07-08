@@ -54,6 +54,10 @@ This is a monorepo using Nx for running, testing and managing projects
 - Includes mobile app for scanning and verifying QR code
 - Download and share e-tickets
 - Create multiple organizations
+- Email notifications
+- Social Auth
+- Passwordless authentication with webauth and FIDO2
+- View events in a calendar with Google Calendar
 
 ## TODO
 - sales calculation and dashboard
@@ -87,7 +91,7 @@ Fork this repo and clone it
 - Firebase emulator suite for testing - [docs](https://firebase.google.com/docs/emulator-suite/install_and_configure)
 - PostgeSQL
 - Redis
-- Kafka - run `docker-compose up` using [docker-compose.yml](https://github.com/MisterLobo/ebs/docker-compose.yml) at the root of the repository
+- Kafka - run `docker-compose up` using [docker-compose.yml](https://github.com/MisterLobo/ebs/blob/main/docker-compose.yml) at the root of the repository
 - Install [atlas cli](https://atlasgo.io/guides/orms/gorm/getting-started) for gorm
 - AWS account to use its services (ECS, EC2, ECR, SQS, SNS, S3, EventBridgeScheduler, etc.)
 

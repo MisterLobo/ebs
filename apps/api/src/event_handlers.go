@@ -205,7 +205,7 @@ func eventHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				rd := lib.GetRedisClient()
 				token := rd.JSONGet(context.Background(), fmt.Sprintf("%s:fcm", uid), "$.token").Val()
 				log.Printf("[%d] retrieved token from cache: %s", userId, token)
-				topic := fmt.Sprintf("EventsToOpen_%d", eventId)
+				topic := utils.WithSuffix(fmt.Sprintf("EventsToOpen_%d", eventId))
 				fcm, _ := lib.GetFirebaseMessaging()
 				res, err := fcm.SubscribeToTopic(context.Background(), []string{token}, topic)
 				if err != nil {
@@ -359,9 +359,10 @@ func eventHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 					Products: stripe.StringSlice([]string{}),
 				},
 			}
-			if body.DiscountType == "percent" {
+			switch body.DiscountType {
+			case "percent":
 				couponCreateParams.PercentOff = body.PercentOff
-			} else if body.DiscountType == "amount" {
+			case "amount":
 				couponCreateParams.AmountOff = body.AmountOff
 			}
 			coupon, err := sc.V1Coupons.Create(context.Background(), couponCreateParams)

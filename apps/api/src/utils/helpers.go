@@ -12,7 +12,9 @@ import (
 	"ebs/src/lib"
 	"ebs/src/models"
 	"ebs/src/types"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -25,12 +27,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron/v2"
+	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/gosimple/slug"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/account"
 	"github.com/stripe/stripe-go/v82/accountlink"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/oauth2"
+	"google.golang.org/api/calendar/v3"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -41,20 +47,18 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 		log.Printf("Error parsing date_time: %s\n", err.Error())
 		return 0, err
 	}
-	dateTime = time.Date(
-		dateTime.Year(),
-		dateTime.Month(),
-		dateTime.Day(),
-		dateTime.Hour(),
-		dateTime.Minute(),
-		0,
-		0,
-		dateTime.Location(),
-	)
-	log.Printf("dateTime: Local=%s UTC=%s\n", dateTime.Local().String(), dateTime.UTC().String())
+	log.Printf("timezone: %s\n", params.Timezone)
+	loc, err := time.LoadLocation(params.Timezone)
+	if err != nil {
+		loc = dateTime.Location()
+	}
+	log.Printf("loc: %s %s\n", dateTime.Location(), loc.String())
+	dateTime = dateTime.UTC().In(loc)
+	log.Printf("dateTime: Local=%s UTC=%s\n", dateTime.String(), dateTime.UTC().String())
 	eventStatus := types.EVENT_DRAFT
 
 	tenantId, _ := uuid.Parse(ctx.GetString("tenant_id"))
+	calEventID := strings.ReplaceAll(uuid.NewString(), "-", "")
 	event := models.Event{
 		Title:       params.Title,
 		Name:        params.Name,
@@ -67,6 +71,10 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 		Status:      eventStatus,
 		Mode:        params.Mode,
 		TenantID:    &tenantId,
+		Timezone:    params.Timezone,
+		CalEventID:  &calEventID,
+		Type:        params.Type,
+		Category:    params.Category,
 	}
 
 	var eventId uint
@@ -78,17 +86,8 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 			log.Printf("Error parsing deadline: %s\n", err.Error())
 			return err
 		}
-		deadline = time.Date(
-			deadline.Year(),
-			deadline.Month(),
-			deadline.Day(),
-			deadline.Hour(),
-			deadline.Minute(),
-			0,
-			0,
-			deadline.Location(),
-		)
-		log.Printf("dateTime: Local=%s", deadline.String())
+		deadline = deadline.UTC().In(loc)
+		log.Printf("deadline: Local=%s", deadline.String())
 		event.Deadline = &deadline
 		if params.OpensAt != nil {
 			opensAt, err := time.Parse(config.TIME_PARSE_FORMAT, *params.OpensAt)
@@ -123,24 +122,85 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 		}
 		eventId = event.ID
 
+		go func() {
+			if org.CalendarID == nil {
+				log.Println("Organization calendar not set. Exiting")
+				return
+			}
+			var tok models.Token
+			if err := db.
+				Where(&models.Token{
+					Type:          "AccessToken",
+					TokenName:     "calendar_token",
+					RequestedBy:   org.ID,
+					RequesterType: "org",
+					Status:        "active",
+				}).
+				First(&tok).
+				Error; err != nil {
+				log.Printf("Could not retrieve session for Org [%d]: %s\n", org.ID, err.Error())
+				return
+			}
+			tokmd := *tok.Metadata
+			raw := tokmd["raw"]
+			var token oauth2.Token
+			tokb, _ := json.Marshal(raw)
+			if err := json.NewDecoder(strings.NewReader(string(tokb))).Decode(&token); err != nil {
+				log.Printf("Could not construct Oauth2 Token from data: %s\n", err.Error())
+				return
+			}
+			svc, err := lib.GAPICreateCalendarService(ctx, &token, nil)
+			if err != nil {
+				log.Printf("Could not create Calendar service for Org [%d]: calID=%s error=%s\n", org.ID, *org.CalendarID, err.Error())
+				return
+			}
+			calID, err := base64.RawURLEncoding.DecodeString(*org.CalendarID)
+			if err != nil {
+				log.Printf("Could not decode Calendar ID from base64 string: %s\n", err.Error())
+				return
+			}
+			/* eventStartDate := event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT)
+			if !params.Publish && params.Mode == "scheduled" && opens_at != nil {
+				eventStartDate = event.OpensAt.Format(config.GAPI_TIME_PARSE_FORMAT)
+			} */
+			err = lib.GAPIAddEvent(string(calID), &calendar.Event{
+				Id:       calEventID,
+				Summary:  event.Title,
+				Location: event.Location,
+				Start: &calendar.EventDateTime{
+					DateTime: event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT),
+					TimeZone: event.Timezone,
+				},
+				End: &calendar.EventDateTime{
+					DateTime: event.DateTime.Format(config.GAPI_TIME_PARSE_FORMAT),
+					TimeZone: event.Timezone,
+				},
+				Description: *event.About,
+				Attendees: []*calendar.EventAttendee{
+					{
+						Email:       org.ContactEmail,
+						DisplayName: org.Name,
+						Organizer:   true,
+					},
+				},
+			}, svc)
+			if err != nil {
+				log.Printf("Failed to add Event [%d] to Calendar for Org [%d]: %s\n", eventId, org.ID, err.Error())
+				return
+			}
+			log.Printf("Event [%d] has been added to Calendar for Org [%d]\n", org.ID, eventId)
+		}()
+
 		// Set a schedule for completing the event
 		go func() {
+			topicName := WithSuffix("EventsToComplete")
 			runsAt := event.DateTime
-			runDate := time.Date(
-				runsAt.UTC().Year(),
-				runsAt.UTC().Month(),
-				runsAt.UTC().Day(),
-				runsAt.UTC().Hour(),
-				runsAt.UTC().Minute(),
-				0,
-				0,
-				runsAt.UTC().Location(),
-			)
+			runDate := runsAt.UTC().In(loc)
 			log.Printf("[DateTime] job scheduled at: %s\n", runDate)
 			jobTaskID := uuid.New()
 			payloadId := jobTaskID.String()
 			jobTask := models.JobTask{
-				Name:    fmt.Sprintf("Event_%d_DateTime", eventId),
+				Name:    WithSuffix(fmt.Sprintf("Event_%d_DateTime", eventId)),
 				JobType: "OneTimeJobStartDateTime",
 				RunsAt:  runDate,
 				HandlerParams: []any{
@@ -151,12 +211,12 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 					"payloadId":        payloadId,
 					"id":               int64(eventId),
 					"producerClientId": "EventsToCompleteProducer",
-					"topic":            "EventsToComplete",
+					"topic":            topicName,
 					"table":            "events",
 				},
 				Source:     "Events",
 				SourceType: "table",
-				Topic:      "EventsToComplete",
+				Topic:      topicName,
 			}
 			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
 			if err != nil {
@@ -168,22 +228,14 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 
 		// Set a schedule for Closing the ticket reservation
 		go func() {
-			runsAt := event.Deadline
-			runDate := time.Date(
-				runsAt.UTC().Year(),
-				runsAt.UTC().Month(),
-				runsAt.UTC().Day(),
-				runsAt.UTC().Hour(),
-				runsAt.UTC().Minute(),
-				0,
-				0,
-				runsAt.UTC().Location(),
-			)
+			topicName := WithSuffix("EventsToClose")
+			runsAt := deadline
+			runDate := runsAt.UTC().In(loc)
 			log.Printf("[Deadline] job scheduled at: %s\n", runDate)
 			jobTaskID := uuid.New()
 			payloadId := jobTaskID.String()
 			jobTask := models.JobTask{
-				Name:    fmt.Sprintf("Event_%d_Deadline", eventId),
+				Name:    WithSuffix(fmt.Sprintf("Event_%d_Deadline", eventId)),
 				JobType: "OneTimeJobStartDateTime",
 				RunsAt:  runDate,
 				HandlerParams: []any{
@@ -194,12 +246,12 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 					"payloadId":        payloadId,
 					"id":               int64(eventId),
 					"producerClientId": "EventsToCloseProducer",
-					"topic":            "EventsToClose",
+					"topic":            topicName,
 					"table":            "events",
 				},
 				Source:     "Events",
 				SourceType: "table",
-				Topic:      "EventsToClose",
+				Topic:      topicName,
 			}
 			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
 			if err != nil {
@@ -216,22 +268,14 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 	}
 	if !params.Publish && params.Mode == "scheduled" && opens_at != nil {
 		go func() {
+			topicName := WithSuffix("EventsToOpen")
 			runsAt := event.OpensAt
-			runDate := time.Date(
-				runsAt.UTC().Year(),
-				runsAt.UTC().Month(),
-				runsAt.UTC().Day(),
-				runsAt.UTC().Hour(),
-				runsAt.UTC().Minute(),
-				0,
-				0,
-				runsAt.UTC().Location(),
-			)
+			runDate := runsAt.UTC().In(loc)
 			log.Printf("[OpensAt] job scheduled at: %s\n", runDate)
 			jobTaskID := uuid.New()
 			payloadId := jobTaskID.String()
 			jobTask := models.JobTask{
-				Name:    fmt.Sprintf("Event_%d_OpensAt", eventId),
+				Name:    WithSuffix(fmt.Sprintf("Event_%d_OpensAt", eventId)),
 				JobType: "OneTimeJobStartDateTime",
 				RunsAt:  runDate,
 				HandlerParams: []any{
@@ -242,12 +286,12 @@ func CreateNewEvent(ctx *gin.Context, params *types.CreateEventRequestBody, orga
 					"payloadId":        payloadId,
 					"id":               int64(eventId),
 					"producerClientId": "EventsToOpenProducer",
-					"topic":            "EventsToOpen",
+					"topic":            topicName,
 					"table":            "events",
 				},
 				Source:     "Events",
 				SourceType: "table",
-				Topic:      "EventsToOpen",
+				Topic:      topicName,
 			}
 			id, err := jobTask.CreateAndEnqueueJobTask(jobTask)
 			if err != nil {
@@ -442,14 +486,25 @@ func GetTicketsForEvent(id uint, isOwner bool) ([]*models.Ticket, error) {
 func PublishEvent(id uint) error {
 	db := db.GetDb()
 	err := db.Transaction(func(tx *gorm.DB) error {
-		err := tx.
+		var ticketCount int64
+		if err := tx.
+			Model(&models.Ticket{}).
+			Where("event_id = ?", id).
+			Count(&ticketCount).
+			Error; err != nil {
+			return err
+		}
+		if ticketCount == 0 {
+			return errors.New("must have at least one ticket open to publish")
+		}
+		if err := tx.
 			Model(&models.Event{}).
 			Where("id = ? AND status IN (?)", id, []types.EventStatus{
 				types.EVENT_DRAFT,
 				types.EVENT_TICKETS_NOTIFY,
 			}).
-			Update("status", types.EVENT_REGISTRATION).Error
-		if err != nil {
+			Update("status", types.EVENT_REGISTRATION).
+			Error; err != nil {
 			return err
 		}
 		return nil
@@ -1053,4 +1108,145 @@ func CreateStripeAccount(org *models.Organization) (*stripe.Account, string, err
 		return acc, "", err
 	}
 	return acc, link.URL, nil
+}
+
+func WithSuffix(topic string) string {
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv != string(types.Production) {
+		topic = fmt.Sprintf("%s_%s", topic, apiEnv)
+	}
+	return topic
+}
+
+func WithPrefix(topic string) string {
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv != string(types.Production) {
+		topic = fmt.Sprintf("%s_%s", apiEnv, topic)
+	}
+	return topic
+}
+
+func IsProd() bool {
+	return os.Getenv("API_ENV") == string(types.Production)
+}
+
+func MarshalRawCredentials(c *webauthn.Credential) (*types.JSONB, error) {
+	b, err := json.Marshal(c)
+	if err != nil {
+		log.Printf("Could not marshal json: %s\n", err.Error())
+		return nil, err
+	}
+	var rc types.JSONB
+	if err := json.Unmarshal(b, &rc); err != nil {
+		log.Printf("Could not unmarshal to JSONB: %s\n", err.Error())
+		return nil, err
+	}
+	return &rc, nil
+}
+
+func SaveCredentials(u *models.User) error {
+	db := db.GetDb()
+	creds := make([]*models.Credential, 0)
+	for _, c := range u.Credentials {
+		publicKey := base64.StdEncoding.EncodeToString(c.PublicKey)
+		rc, err := MarshalRawCredentials(&c)
+		if err != nil {
+			log.Printf("Error serializing to JSONB: %s\n", err.Error())
+			continue
+		}
+		bid := base64.StdEncoding.EncodeToString(c.ID)
+		cred := &models.Credential{
+			ID:         bid,
+			DeviceName: fmt.Sprintf("Device-%s", bid),
+			UserID:     u.ID,
+			PublicKey:  publicKey,
+			RawCreds:   rc,
+		}
+		creds = append(creds, cred)
+	}
+	if err := db.CreateInBatches(&creds, 10).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func GetCredentialsByUser(uid uint) ([]*models.Credential, error) {
+	var creds []*models.Credential
+	db := db.GetDb()
+	if err := db.
+		Model(&models.Credential{}).
+		Where("user_id = ?", uid).
+		Find(&creds).
+		Limit(10).
+		Error; err != nil {
+		log.Printf("Error retrieving creds for user %d: %s\n", uid, err.Error())
+		return nil, err
+	}
+	log.Printf("Found %d credentials for user %d\n", len(creds), uid)
+	return creds, nil
+}
+
+func GetCredentials(u *models.User) error {
+	var creds []*models.Credential
+	db := db.GetDb()
+	if err := db.
+		Model(&models.Credential{}).
+		Where("user_id = ?", u.ID).
+		Find(&creds).
+		Limit(10).
+		Error; err != nil {
+		log.Printf("Error retrieving creds for user %d: %s\n", u.ID, err.Error())
+		return err
+	}
+	u.StoredCredentials = creds
+	log.Printf("Found %d credentials for user %d\n", len(creds), u.ID)
+	for _, cred := range creds {
+		rc, err := cred.UnmarshalRawCredentials()
+		if err != nil {
+			log.Printf("Error deserializing credentials: %s\n", err.Error())
+		}
+		u.Credentials = append(u.Credentials, *rc)
+	}
+	return nil
+}
+
+func RevokeCredential(uid uint, name string) error {
+	db := db.GetDb()
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var del models.Credential
+		if err := tx.
+			Model(&models.Credential{}).
+			Where("user_id = ? AND device_name = ?", uid, name).
+			Delete(&del).
+			Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func GenerateJWT(email string, uid uint, orgId uint) (string, error) {
+	now := time.Now()
+	expirationTime := now.Add(24 * time.Hour)
+	permissionClaims := []string{
+		"user:read",
+		"user:update",
+	}
+	claims := &types.Claims{
+		Permissions:  permissionClaims,
+		Username:     email,
+		Organization: orgId,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   fmt.Sprintf("%d", uid),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	return token.SignedString([]byte(config.JWT_SECRET))
 }

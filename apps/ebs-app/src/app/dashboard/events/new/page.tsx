@@ -1,5 +1,5 @@
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import NewEventForm from './components/forms'
+import { NewEventForm } from './components/forms'
 import { Separator } from '@/components/ui/separator'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { getActiveOrganization, organizationOnboarding } from '@/lib/actions'
@@ -28,9 +28,11 @@ export default async function NewEventPage() {
         </Breadcrumb>
       </div>
     </header>
-    <div className="mx-auto py-10 space-y-2">
-      <h1 className="text-3xl font-semibold">New Event</h1>
-      <NewEventForm onboardingComplete={completed} />
+    <div className="container mx-auto py-10 space-y-2">
+      <div className="flex w-full justify-center flex-col">
+        <h1 className="text-3xl font-semibold">New Event</h1>
+        <NewEventForm onboardingComplete={completed} />
+      </div>
     </div>
     </>
   )

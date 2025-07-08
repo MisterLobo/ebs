@@ -8,21 +8,49 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/api/src/",
-        "command": "go build -race -o ../dist/packages/api ./*.go"
+        "command": "go build -race -o ../dist/packages/api"
       }
     },
     "serve": {
       "executor": "nx:run-commands",
       "options": {
-        "cwd": "apps/api/src/",
-        "command": "air --build.cmd \"go build -race -o tmp/main ./*.go\""
+        "cwd": "apps/api/",
+        "command": "air -c .air.debug.toml"
+      }
+    },
+    "serve:tls": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/api/",
+        "command": "TLS_ENABLE=true air -c .air.debug.toml"
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/api/src/",
-        "command": "go test -race"
+        "command": "go test"
+      }
+    },
+    "emu": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/api/",
+        "command": "firebase emulators:start"
+      }
+    },
+    "stripe:mock": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/api/",
+        "command": "stripe-mock"
+      }
+    },
+    "stripe:wh": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/api/scripts",
+        "command": "./stripe.sh"
       }
     }
   },

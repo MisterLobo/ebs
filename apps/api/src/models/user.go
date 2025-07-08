@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v82"
 	"gorm.io/gorm"
@@ -18,6 +19,7 @@ type User struct {
 	ID                   uint            `gorm:"primarykey" json:"id"`
 	Name                 string          `json:"name,omitempty"`
 	Email                string          `gorm:"uniqueIndex" json:"email,omitempty"`
+	PhoneNumber          string          `json:"phone,omitempty"`
 	Role                 types.UserRole  `json:"role,omitempty"`
 	UID                  string          `json:"uid,omitempty"`
 	ActiveOrg            uint            `json:"active_org,omitempty"`
@@ -31,15 +33,27 @@ type User struct {
 	LastActive           *time.Time      `json:"last_active,omitempty"`
 	TenantID             *uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex" json:"-"`
 	Identifier           *string         `gorm:"<-:create" json:"resource_id"`
+	Status               string          `gorm:"default:'active'" json:"status"`
 
-	Bookings      []*Booking      `gorm:"foreignKey:user_id" json:"bookings,omitempty"`
-	Organizations []*Organization `gorm:"foreignKey:owner_id" json:"organizations,omitempty"`
+	Credentials []webauthn.Credential `gorm:"-" json:"-"`
+
+	StoredCredentials []*Credential   `json:"-"`
+	Bookings          []*Booking      `gorm:"foreignKey:user_id" json:"bookings,omitempty"`
+	Organizations     []*Organization `gorm:"foreignKey:owner_id" json:"organizations,omitempty"`
 	// Subscriptions []*Event        `gorm:"many2many:event_subscriptions;" json:"subscriptions,omitempty"`
 	// Teams         []*Team         `gorm:"many2many:team_members;" json:"teams,omitempty"`
 
 	types.Timestamps
 }
 
+func (u User) WebAuthnID() []byte {
+	return fmt.Appendf(nil, "%s_%d", u.UID, u.ID)
+}
+func (u User) WebAuthnName() string                       { return u.Name }
+func (u User) WebAuthnDisplayName() string                { return u.Name }
+func (u User) WebAuthnIcon() string                       { return "" }
+func (u User) WebAuthnCredentials() []webauthn.Credential { return u.Credentials }
+func (u *User) AddCredential(c webauthn.Credential)       { u.Credentials = append(u.Credentials, c) }
 func (u *User) AfterCreate(tx *gorm.DB) error {
 	go func() {
 		s := lib.GetStripeClient()

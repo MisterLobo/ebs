@@ -208,7 +208,7 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			tokenCookie, err := ctx.Cookie("token")
 			email := ctx.GetString("email")
 			if err != nil {
-				tokenCookie, err = generateJWT(email, userId, orgId)
+				tokenCookie, err = utils.GenerateJWT(email, userId, orgId)
 			}
 			if err != nil {
 				log.Printf("Error switching to organization %d: %s\n", orgId, err.Error())
@@ -272,9 +272,6 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			}
 			rd.JSONSet(context.Background(), fmt.Sprintf("%d:active", userId), "$", org)
 			rd.Expire(context.Background(), key, time.Hour)
-			appEnv := os.Getenv("APP_ENV")
-			secure := appEnv != "local"
-			ctx.SetCookie("token", tokenCookie, 3600, "/", os.Getenv("APP_HOST"), secure, true)
 			ctx.JSON(http.StatusOK, gin.H{"access_token": tokenCookie})
 		}).
 		GET("/organizations/:orgId/reservations", func(ctx *gin.Context) {
@@ -287,7 +284,6 @@ func organizationHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			db := db.GetDb()
 			userId := ctx.GetUint("id")
 			claims := ctx.GetStringSlice("perms")
-			log.Printf("claims: %v\n", claims)
 			allowed := slices.IndexFunc(claims, func(c string) bool { return c == "reservations:list" || c == "reservations*" || c == "*" }) > -1
 			if !allowed {
 				err := errors.New("not enough permissions to perform this action")

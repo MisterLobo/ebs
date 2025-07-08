@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -8,14 +9,20 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:passkeys/authenticator.dart';
+import 'package:passkeys/types.dart';
 import 'firebase_options.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 Future main() async {
+  await dotenv.load(fileName: '.env');
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  await dotenv.load(fileName: '.env');
+  var appEnv = dotenv.env['APP_ENV'] ?? '';
+  if (appEnv == 'local') {
+    // await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
+  }
   runApp(const MyApp());
 }
 
@@ -51,7 +58,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'EBS Scanner',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
@@ -73,6 +80,16 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
+class LocalHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
+        return true;
+      };
+  }
+}
+
 typedef AuthenticatorResponse = Map<String, Object?>;
 class Authenticator {
   Future<UserCredential> signInWithGoogle() async {
@@ -92,18 +109,65 @@ class Authenticator {
     final cred = await signInWithGoogle();
     final email = cred.user?.email ?? '';
     var apiHost = dotenv.env['API_HOST'] ?? '';
-    var secret = dotenv.env['API_SECRET'] ?? '';
-    debugPrint('$apiHost $secret');
+    var appEnv = dotenv.env['APP_ENV'] ?? '';
+    final idToken = await cred.user?.getIdToken();
+    debugPrint('idToken: $idToken');
+    if (appEnv == 'local') {
+      HttpOverrides.global = LocalHttpOverrides();
+    }
     final response = await http.post(
       Uri.https(apiHost, '/api/v1/auth/login'),
       headers: <String, String>{
-        'x-secret': secret,
+        'Authorization': '$idToken',
         'origin': 'app:mobile',
       },
       body: jsonEncode(<String, String>{
         'email': email,
       }),
     );
+    if (!context.mounted) {
+      return;
+    }
+    if (response.statusCode == 401) {
+      final authMfa = response.headers['x-authenticate-mfa'];
+      if (authMfa == 'true') {
+        final flowId = response.headers['x-mfa-flow-id'];
+        final challenge = response.headers['x-mfa-challenge'];
+        debugPrint('flowId: $flowId; challenge: $challenge');
+        final startResponse = await http.post(
+          Uri.https(apiHost, '/api/v1/passkey/login/start'),
+          headers: <String, String>{
+            'authorization': '$idToken',
+            'content-type': 'application/json',
+            'x-mfa-flow-id': '$flowId',
+            'x-authenticate-mfa': 'true',
+            'x-mfa-challenge': '$challenge',
+          },
+          body: jsonEncode(<String, String>{
+            'email': email,
+          }),
+        );
+        if (startResponse.statusCode == 200) {
+          final responseBody = jsonDecode(startResponse.body) as Map<String, dynamic>;
+          debugPrint('$responseBody');
+          final authenticator = PasskeyAuthenticator(debugMode: appEnv == 'local');
+          final publicKey = responseBody['publicKey'];
+          final art = AuthenticateRequestType(
+            relyingPartyId: publicKey['rpId'],
+            challenge: publicKey['challenge'],
+            mediation: MediationType.Optional,
+            preferImmediatelyAvailableCredentials: true,
+            allowCredentials: List.from(publicKey['allowCredentials']).map((el) {
+              CredentialType? ct = CredentialType(type: el['type'], id: el['id'], transports: List.from(el['transports']));
+              return ct;
+            }).toList(),
+          );
+          final platformResponse = await authenticator.authenticate(art);
+          debugPrint('$platformResponse');
+        }
+      }
+      debugPrint('authMfa: $authMfa');
+    }
     if (!context.mounted) {
       return;
     }
@@ -120,13 +184,15 @@ class Authenticator {
 
   Future<AuthenticatorResponse?> verifyCode(AppState state) async {
     var apiHost = dotenv.env['API_HOST'] ?? '';
-    var secret = dotenv.env['API_SECRET'] ?? '';
+    var appEnv = dotenv.env['APP_ENV'] ?? '';
+    if (appEnv == 'local') {
+      HttpOverrides.global = LocalHttpOverrides();
+    }
     final response = await http.post(
       Uri.https(apiHost, '/api/v1/admission'),
       headers: <String, String>{
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer ${state.token ?? 'token'}',
-        'x-secret': secret,
         'origin': 'app:mobile',
       },
       body: jsonEncode(<String, String>{

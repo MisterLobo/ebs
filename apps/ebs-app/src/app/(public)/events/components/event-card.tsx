@@ -39,7 +39,7 @@ export default function EventCard({ data }: Props) {
   }, [data])
 
   return (
-    <Card className="w-3xl h-auto">
+    <Card className="w-full max-w-3xl h-auto">
       {(data?.status === 'notify' && data?.opens_at) && <div className="ml-8 text-sm">{ format(new Date(data.opens_at), 'MMM dd p') }</div>}
       <CardContent className="space-x-2 flex flex-row items-center">
         <div className="inline-flex flex-col items-center justify-center h-16 w-24 font-semibold">

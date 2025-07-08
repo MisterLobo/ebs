@@ -1,12 +1,11 @@
 package models
 
 import (
-	"ebs/src/lib"
 	"ebs/src/types"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type Event struct {
@@ -14,10 +13,10 @@ type Event struct {
 	Title       string            `json:"title,omitempty"`
 	Name        string            `json:"name,omitempty"`
 	About       *string           `json:"about,omitempty"`
-	Type        string            `gorm:"default:'general'" json:"type"`
+	Type        string            `json:"type"`
 	Location    string            `json:"location,omitempty"`
 	DateTime    *time.Time        `json:"date_time,omitempty"`
-	Status      types.EventStatus `gorm:"default:'draft'" json:"status,omitempty"` // `json:"status"`
+	Status      types.EventStatus `gorm:"default:'draft'" json:"status,omitempty"`
 	OrganizerID uint              `json:"organizer,omitempty"`
 	Seats       uint              `json:"seats,omitempty"`
 	CreatedBy   uint              `json:"created_by,omitempty"`
@@ -28,14 +27,38 @@ type Event struct {
 	Identifier  *string           `gorm:"<-:create" json:"resource_id"`
 	TenantID    *uuid.UUID        `gorm:"type:uuid" json:"-"`
 	Category    string            `gorm:"default:'uncategorized'" json:"category"`
+	Timezone    string            `gorm:"default:'UTC'" json:"timezone"`
+	CalEventID  *string           `json:"-"`
 
 	Creator      User         `gorm:"foreignKey:created_by" json:"-"`
 	Organization Organization `gorm:"foreignKey:organizer_id" json:"organization"`
 	Tickets      []*Ticket    `json:"tickets,omitempty"`
 	Subscribers  []*User      `gorm:"many2many:event_subscriptions;joinForeignKey:SubscriberID;joinReferences:SubscriberID" json:"subscribers,omitempty"`
-	// EventSubscriptions []EventSubscription `gorm:"foreignKey:event_id" json:"event_susbcriptions,omitempty"`
 
 	types.Timestamps
+}
+
+func (e *Event) AfterFind(tx *gorm.DB) error {
+	if e.Timezone != "" {
+		l, err := time.LoadLocation(e.Timezone)
+		if err != nil {
+			return err
+		}
+		if e.DateTime != nil {
+			dt := e.DateTime.In(l)
+			e.DateTime = &dt
+		}
+
+		if e.OpensAt != nil {
+			dt := e.OpensAt.In(l)
+			e.OpensAt = &dt
+		}
+		if e.Deadline != nil {
+			dt := e.Deadline.In(l)
+			e.Deadline = &dt
+		}
+	}
+	return nil
 }
 
 type EventSubscription struct {
@@ -50,22 +73,4 @@ type EventSubscription struct {
 	Subscriber *User  `gorm:"foreignKey:subscriber_id" json:"-"`
 
 	types.Timestamps
-}
-
-func EventOpenProducer(id uint, payload types.JSONB) error {
-	err := lib.KafkaProduceMessage("events_open_producer", "events-open", &payload)
-	if err != nil {
-		log.Printf("Error on producing message: %s\n", err.Error())
-		return err
-	}
-	return nil
-}
-
-func EventCloseProducer(id uint, payload types.JSONB) error {
-	err := lib.KafkaProduceMessage("events_close_producer", "events-close", &payload)
-	if err != nil {
-		log.Printf("Error on producting message: %s\n", err.Error())
-		return err
-	}
-	return nil
 }

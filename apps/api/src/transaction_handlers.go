@@ -29,7 +29,7 @@ func transactionHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 			orgId := ctx.GetUint("org")
 			userId := ctx.GetUint("id")
 			requestID := uuid.New()
-			url, csid, txnId, err := utils.CreateStripeCheckout(ctx.Copy(), &body, map[string]string{
+			url, csid, txnId, err := utils.CreateStripeCheckout(ctx, &body, map[string]string{
 				"orgId":     fmt.Sprint(orgId),
 				"requestId": requestID.String(),
 				"userId":    fmt.Sprint(userId),
@@ -38,7 +38,7 @@ func transactionHandlers(g *gin.RouterGroup) *gin.RouterGroup {
 				log.Printf("error on checkout: %s\n", err.Error())
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			}
-			_, errs, err := utils.CreateReservation(ctx.Copy(), &body, userId, *url, txnId, csid, &requestID)
+			_, errs, err := utils.CreateReservation(ctx, &body, userId, *url, txnId, csid, &requestID)
 			if err != nil {
 				log.Printf("Error creating Reservation: %s\n", err.Error())
 				ctx.JSON(http.StatusBadRequest, gin.H{"errors": errs})

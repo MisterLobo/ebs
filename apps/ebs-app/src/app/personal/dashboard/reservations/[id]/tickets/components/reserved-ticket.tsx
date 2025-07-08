@@ -60,7 +60,7 @@ export default function ReservedTicket({ data, booking, reservation }: Props) {
     }
   }, [url, link.current])
   return (
-    <Card className="w-3xl h-auto">
+    <Card className="w-full max-w-3xl h-auto">
       <CardHeader>
         <CardTitle>#{ reservation?.id } { data?.tier } { data?.type }</CardTitle>
       </CardHeader>

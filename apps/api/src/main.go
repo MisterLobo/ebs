@@ -5,34 +5,52 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"ebs/src/boot"
 	"ebs/src/config"
+	"ebs/src/controllers"
 	"ebs/src/db"
 	"ebs/src/lib"
+	"ebs/src/lib/mailer"
 	"ebs/src/middlewares"
 	"ebs/src/models"
 	"ebs/src/types"
+	"ebs/src/utils"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"firebase.google.com/go/v4/messaging"
+	"github.com/covalenthq/lumberjack"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/gookit/goutil/dump"
+	"github.com/grokify/go-pkce"
+	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/stripe/stripe-go/v82"
 	engineiotypes "github.com/zishang520/engine.io/v2/types"
 	"github.com/zishang520/socket.io/v2/socket"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/calendar/v3"
 	"gorm.io/gorm"
 )
 
@@ -64,7 +82,9 @@ func (c Claims) GetAudience() (jwt.ClaimStrings, error) {
 	return c.RegisteredClaims.GetAudience()
 }
 
-var jwtKey = []byte(os.Getenv("JWT_SECRET"))
+const (
+	apiPrefix string = "/api/v1"
+)
 
 var eventDateTimeValidatorFunc validator.Func = func(fl validator.FieldLevel) bool {
 	date, ok := fl.Field().Interface().(string)
@@ -155,6 +175,7 @@ var betweenfields validator.Func = func(fl validator.FieldLevel) bool {
 
 func setupRouter() *gin.Engine {
 	router := gin.Default()
+	router.Use(middlewares.SecureHeaders)
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, "ok")
 	})
@@ -176,7 +197,277 @@ func maintenanceModeMiddleware(g *gin.Engine) *gin.Engine {
 }
 
 func apiv1Group(g *gin.Engine) *gin.RouterGroup {
-	apiv1 := g.Group("/api/v1")
+	apiv1 := g.Group(apiPrefix)
+	return apiv1
+}
+
+func publicRoutes(g *gin.Engine) *gin.RouterGroup {
+	apiv1 := apiv1Group(g)
+	apiv1.
+		GET("/share/:filename", func(ctx *gin.Context) {
+			apiEnv := os.Getenv("API_ENV")
+			if apiEnv != "local" {
+				ctx.Status(http.StatusNotFound)
+				return
+			}
+			var params struct {
+				Filename string `uri:"filename" binding:"required"`
+			}
+			if err := ctx.ShouldBindUri(&params); err != nil {
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			assets := os.Getenv("TEMP_DIR")
+			filePath := path.Join(assets, fmt.Sprintf("%s.jpeg", params.Filename))
+			log.Printf("filePath: %s", filePath)
+			ctx.File(filePath)
+		})
+
+	passkey := apiv1.Group("/passkey")
+	passkey.Use(middlewares.VerifyIdToken)
+	passkey.Use(func(ctx *gin.Context) {
+		authMFA := ctx.Request.Header.Get("X-Authenticate-MFA")
+		log.Printf("X-Authenticate-MFA: %s", authMFA)
+		if authMFA != "true" {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Access denied"})
+			return
+		}
+		if ctx.Request.Header.Get("X-MFA-Flow-ID") == "" {
+			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
+		flowId := ctx.Request.Header.Get("X-MFA-Flow-ID")
+		if err := uuid.Validate(flowId); err != nil {
+			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
+	})
+	passkey.
+		POST("/login/start", func(ctx *gin.Context) {
+			opts, status, err := controllers.PasskeyLoginStart(ctx.Copy())
+			if err != nil {
+				log.Printf("Error on PasskeyLoginStart: %s\n", err.Error())
+				ctx.Status(status)
+				return
+			}
+			if status != http.StatusOK {
+				ctx.Status(status)
+				return
+			}
+			ctx.JSON(http.StatusOK, gin.H{"publicKey": opts.Response})
+		}).
+		POST("/login/finish", func(ctx *gin.Context) {
+			token, status, err := controllers.PasskeyLoginFinish(ctx.Copy())
+			if err != nil {
+				log.Printf("Error on PasskeyLoginFinish: %s\n", err.Error())
+				if status >= http.StatusBadRequest && status <= http.StatusInternalServerError {
+					ctx.JSON(status, gin.H{"error": err.Error()})
+				}
+				ctx.Status(status)
+				return
+			}
+			if status != http.StatusOK {
+				ctx.Status(status)
+				return
+			}
+			ctx.JSON(http.StatusOK, gin.H{
+				"token": token,
+			})
+		})
+
+	oauthcb := apiv1.Group("/oauth")
+	oauthcb.
+		GET("/google/callback", func(ctx *gin.Context) {
+			var query struct {
+				State    *string `form:"state" binding:"required"`
+				Code     *string `form:"code" binding:"required"`
+				Scope    *string `form:"scope" binding:"required"`
+				AuthUser int     `form:"authuser"`
+				Prompt   string  `form:"prompt"`
+			}
+			if err := ctx.BindQuery(&query); err != nil {
+				log.Printf("Error while parsing request params: %s\n", err.Error())
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			dump.P(query)
+			// Decrypt state
+			key, err := hex.DecodeString(config.API_SECRET)
+			if err != nil {
+				log.Printf("Error while retrieving key: %s\n", err.Error())
+				ctx.Status(http.StatusInternalServerError)
+				return
+			}
+			dec, err := utils.DecryptMessage(key, *query.State)
+			if err != nil {
+				log.Printf("Error while decrypting message: %s\n", err.Error())
+				ctx.Status(http.StatusInternalServerError)
+				return
+			}
+			// Deserialize JSON
+			var state types.Oauth2FlowState
+			if err := json.Unmarshal([]byte(*dec), &state); err != nil {
+				ctx.Status(http.StatusInternalServerError)
+				return
+			}
+			dump.P(state)
+			db := db.GetDb()
+			var uc int64
+			model := db.Model(&models.User{})
+			if state.AccountType == "org" {
+				model = db.Model(&models.Organization{})
+			}
+			if err := model.Where("id = ?", state.AccountID).Count(&uc).Error; err != nil {
+				log.Printf("Error retrieving user info: %s\n", err.Error())
+				ctx.Status(http.StatusInternalServerError)
+				return
+			}
+			if uc == 0 {
+				err := fmt.Errorf("could not find user with ID [%d]", state.AccountID)
+				log.Printf("Error verifying user: %s\n", err.Error())
+				ctx.Status(http.StatusBadRequest)
+				return
+			}
+			// Decode nonce
+			dnonce, err := hex.DecodeString(state.Nonce)
+			if err != nil {
+				log.Printf("Could not read nonce: %s\n", err.Error())
+				ctx.Status(http.StatusInternalServerError)
+				return
+			}
+			// Read generated nonce
+			rd := lib.GetRedisClient()
+			nonceKey := fmt.Sprintf("org::%d:oauth:nonce", state.AccountID)
+			cache := rd.Get(context.Background(), nonceKey).Val()
+			nonce, err := hex.DecodeString(cache)
+			if err != nil {
+				log.Printf("Error while decoding hex value: %s\n", err.Error())
+				ctx.Status(http.StatusInternalServerError)
+				return
+			}
+			// Subtle compare
+			if subtle.ConstantTimeCompare(dnonce, nonce) != 1 {
+				log.Println("Data mismatch: the supplied values do not match")
+				ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Access denied"})
+				return
+			}
+			oauthcfg := &oauth2.Config{
+				RedirectURL:  config.API_HOST + "/api/v1/oauth/google/callback",
+				ClientID:     config.OAUTH_CLIENT_ID,
+				ClientSecret: config.OAUTH_CLIENT_SECRET,
+				Scopes:       strings.Split(*query.Scope, " "),
+				Endpoint:     google.Endpoint,
+			}
+			// Create code challenge and verifier
+			cv := pkce.NewCodeVerifierBytes(nonce)
+			token, err := oauthcfg.Exchange(
+				context.Background(),
+				*query.Code,
+				oauth2.SetAuthURLParam(pkce.ParamCodeVerifier, cv),
+			)
+			if err != nil {
+				log.Printf("Error while exchanging authorization code for token: %s\n", err.Error())
+				ctx.Status(http.StatusInternalServerError)
+				return
+			}
+			dump.P(token)
+			go func() {
+				t := &models.Token{
+					RequestedBy:   state.AccountID,
+					RequesterType: state.AccountType,
+					Type:          "AccessToken",
+					TokenName:     "calendar_token",
+					TokenValue: types.JSONB{
+						"access_token":  token.AccessToken,
+						"refresh_token": token.RefreshToken,
+						"exp":           token.Expiry,
+						"ttl":           token.ExpiresIn,
+					},
+					TTL:    uint(token.ExpiresIn),
+					Status: "active",
+					Metadata: &types.Metadata{
+						"state": query.State,
+						"raw":   token,
+					},
+				}
+				tx := db.Begin()
+				if err := tx.Model(&models.Token{}).Where(&models.Token{
+					Type:          "AccessToken",
+					TokenName:     "calendar_token",
+					RequestedBy:   state.AccountID,
+					RequesterType: state.AccountType,
+					Status:        "active",
+				}).Update("status", "invalid").Error; err != nil {
+					log.Printf("Error invalidating tokens: %s\n", err.Error())
+					tx.Rollback()
+					return
+				}
+				if err := tx.Create(t).Error; err != nil {
+					log.Printf("Error saving token to database: %s\n", err.Error())
+					tx.Rollback()
+					return
+				}
+				tx.Commit()
+			}()
+			go func() {
+				//Create a calendar named after the Account
+				if state.AccountType == "org" {
+					aid := state.AccountID
+					var org models.Organization
+					if err := db.Where(&models.Organization{ID: aid}).First(&org).Error; err != nil {
+						log.Printf("Failed to retrieve information for Organization [%d]: %s\n", aid, err.Error())
+						return
+					}
+					svc, err := lib.GAPICreateCalendarService(context.Background(), token, nil)
+					if err != nil {
+						log.Printf("Failed to create Calendar service: %s\n", err.Error())
+						return
+					}
+					cal, err := lib.GAPIAddCalendar(org.Name, svc)
+					if err != nil {
+						log.Printf("Failed to create Calendar for [%s]: %s\n", org.Name, err.Error())
+						return
+					}
+					evtId := strings.ReplaceAll(uuid.NewString(), "-", "")
+					today := time.Now()
+					err = lib.GAPIAddEvent(cal.Id, &calendar.Event{
+						Id:      evtId,
+						Summary: "Test",
+						Start: &calendar.EventDateTime{
+							DateTime: today.Add(time.Hour).Format("2006-01-02T15:04:05-0700"),
+							TimeZone: "Asia/Manila",
+						},
+						End: &calendar.EventDateTime{
+							DateTime: today.Add(5 * time.Hour).Format("2006-01-02T15:04:05-0700"),
+							TimeZone: "Asia/Manila",
+						},
+						Description: "just a test",
+						Attendees: []*calendar.EventAttendee{
+							{
+								Email:       org.ContactEmail,
+								DisplayName: org.Name,
+								Organizer:   true,
+							},
+						},
+					}, svc)
+					if err != nil {
+						log.Printf("Failed to add Event to Calendar: %s\n", err.Error())
+						return
+					}
+					log.Println("Event has been added to Calendar")
+					tx := db.Begin()
+					if err := tx.Model(&models.Organization{}).Where("id = ?", aid).Update("calendar_id", base64.RawURLEncoding.EncodeToString([]byte(cal.Id))).Error; err != nil {
+						tx.Rollback()
+						return
+					}
+					tx.Commit()
+				}
+			}()
+			ex := time.Duration(token.ExpiresIn) * time.Second
+			go rd.SetEx(context.Background(), fmt.Sprintf("%s::%d:calendar:token", state.AccountType, state.AccountID), token.AccessToken, ex)
+			go rd.Del(context.Background(), nonceKey)
+			ctx.Redirect(http.StatusTemporaryRedirect, state.Redirect)
+		})
 	return apiv1
 }
 
@@ -186,194 +477,30 @@ func guestAuthRoutes(g *gin.Engine) *gin.RouterGroup {
 	guest.Use(middlewares.VerifyIdToken)
 	guest.
 		POST("/login", func(ctx *gin.Context) {
-			var body types.RegisterUserRequestBody
-			if err := ctx.ShouldBindJSON(&body); err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			auth, err := lib.GetFirebaseAuth()
+			token, status, err := controllers.AuthLogin(ctx)
 			if err != nil {
-				log.Printf("Error initializing FirebaseAuth client: %s\n", err.Error())
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				log.Printf("[AuthLogin] error: %s\n", err.Error())
+				ctx.Status(status)
 				return
 			}
-			user, err := auth.GetUserByEmail(context.Background(), body.Email)
-			if err != nil {
-				log.Printf("error from Firebase: %s\n", err.Error())
-				ctx.JSON(http.StatusNotFound, gin.H{"error": "No user account is associated with this email"})
-				return
-			}
-
-			db := db.GetDb()
-			var muser models.User
-			if err := db.
-				Model(&models.User{}).
-				Select("id", "name", "email").
-				Where(&models.User{Email: user.Email}).
-				First(&muser).
-				Error; err != nil {
-				log.Printf("error: %s\n", err.Error())
-				ctx.JSON(http.StatusNotFound, gin.H{"error": "No user account is associated with this email"})
+			if status != http.StatusOK {
+				ctx.Status(status)
 				return
 			}
 
-			err = db.Transaction(func(tx *gorm.DB) error {
-				if err := db.
-					Model(&models.User{}).
-					Where("id", muser.ID).
-					Update("last_active", time.Now()).
-					Error; err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return err
-				}
-				return nil
-			})
-			if err != nil {
-				log.Printf("Error logging in user [%d]: %s\n", muser.ID, err.Error())
-				ctx.Status(http.StatusBadRequest)
-				return
-			}
-
-			token, _ := generateJWT(user.Email, muser.ID, muser.ActiveOrg)
-
-			uid := ctx.GetString("uid")
-			go func() {
-				rd := lib.GetRedisClient()
-				_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:user", muser.ID), "$", &muser).Result()
-				if err != nil {
-					log.Printf("[redis] Error updating user cache: %s\n", err.Error())
-				}
-				_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:meta", muser.ID), "$", map[string]string{"photoURL": user.PhotoURL}).Result()
-				if err != nil {
-					log.Printf("[redis] Error updating user cache: %s\n", err.Error())
-				}
-				token := rd.JSONGet(context.Background(), fmt.Sprintf("%s:fcm", uid), "$.token").Val()
-				fcm, _ := lib.GetFirebaseMessaging()
-				fcm.SubscribeToTopic(ctx.Copy(), []string{token}, "Notifications")
-			}()
-
-			ctx.JSON(http.StatusOK, gin.H{
+			ctx.JSON(status, gin.H{
 				"token": token,
 			})
 		}).
 		POST("/register", func(ctx *gin.Context) {
-			var body types.RegisterUserRequestBody
-			if err := ctx.ShouldBindJSON(&body); err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			auth, err := lib.GetFirebaseAuth()
+			uid, status, err := controllers.AuthRegister(ctx)
 			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			user, err := auth.GetUserByEmail(context.Background(), body.Email)
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				log.Printf("[AuthRegister] error: %s\n", err.Error())
+				ctx.JSON(status, gin.H{"error": err.Error()})
 				return
 			}
 
-			db := db.GetDb()
-			err = db.Transaction(func(tx *gorm.DB) error {
-				var muser models.User
-				if err := tx.
-					Model(&models.User{}).
-					Select("tenant_id").
-					Where("email = ?", body.Email).
-					First(&muser).
-					Error; err != nil {
-					if !errors.Is(err, gorm.ErrRecordNotFound) {
-						return errors.New("could not complete transaction")
-					}
-				}
-				if muser.TenantID != nil {
-					err := errors.New("user is already registered in the system. Please proceed to Log In")
-					log.Printf("error: %s\n", err.Error())
-					return err
-				}
-
-				newUser := models.User{
-					Email: user.Email,
-					UID:   user.UID,
-					Role:  types.ROLE_OWNER,
-					Name:  user.DisplayName,
-				}
-				if err := tx.Create(&newUser).Error; err != nil {
-					log.Printf("Error creating user: %s\n", err.Error())
-					return fmt.Errorf("error creating user: %s", user.Email)
-				}
-
-				newOrg := models.Organization{
-					Name:         fmt.Sprintf("%s's organization", user.DisplayName),
-					OwnerID:      newUser.ID,
-					Type:         types.ORG_PERSONAL,
-					ContactEmail: user.Email,
-					TenantID:     newUser.TenantID,
-					Status:       "active",
-				}
-				if err := tx.Create(&newOrg).Error; err != nil {
-					return err
-				}
-
-				newTeam := models.Team{
-					OrganizationID: newOrg.ID,
-					OwnerID:        newUser.ID,
-					Name:           "Default",
-					Status:         "active",
-				}
-				if err := tx.Create(&newTeam).Error; err != nil {
-					return err
-				}
-				sc := lib.GetStripeClient()
-				acc, err := sc.V1Accounts.Create(context.Background(), &stripe.AccountCreateParams{
-					BusinessProfile: &stripe.AccountCreateBusinessProfileParams{
-						Name:         stripe.String(newOrg.Name),
-						SupportEmail: stripe.String(newOrg.ContactEmail),
-					},
-					BusinessType: stripe.String("individual"),
-					Company: &stripe.AccountCreateCompanyParams{
-						Name: stripe.String(newOrg.Name),
-					},
-					Type:     stripe.String("express"),
-					Email:    stripe.String(newOrg.ContactEmail),
-					Metadata: map[string]string{"organizationId": fmt.Sprintf("%d", newOrg.ID)},
-					Capabilities: &stripe.AccountCreateCapabilitiesParams{
-						CardPayments: &stripe.AccountCreateCapabilitiesCardPaymentsParams{
-							Requested: stripe.Bool(true),
-						},
-						Transfers: &stripe.AccountCreateCapabilitiesTransfersParams{
-							Requested: stripe.Bool(true),
-						},
-					},
-				})
-				if err != nil {
-					log.Printf("Error creating account for organization: %s\n", err.Error())
-					return errors.New("error creating account for organization")
-				}
-				if err := tx.
-					Model(&models.Organization{}).
-					Where("id = ?", newOrg.ID).
-					Updates(&models.Organization{
-						StripeAccountID: &acc.ID,
-					}).Error; err != nil {
-					log.Printf("Error creating Connect account: %s\n", err.Error())
-				}
-
-				err = tx.
-					Model(&models.User{}).
-					Where(&models.User{ID: newUser.ID}).
-					Update("active_org", newOrg.ID).Error
-				if err != nil {
-					return err
-				}
-				return nil
-			})
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-
-			ctx.JSON(http.StatusOK, gin.H{"uid": user.UID})
+			ctx.JSON(http.StatusOK, gin.H{"uid": uid})
 		})
 	return guest
 }
@@ -425,13 +552,84 @@ func setupSocketServer(r *gin.Engine) *socket.Server {
 	return wss
 }
 
+type Country struct {
+	Cca2      string   `json:"cca2"`
+	Flag      string   `json:"flag"`
+	Timezones []string `json:"timezones"`
+	Name      struct {
+		Common     string            `json:"common"`
+		NativeName map[string]string `json:"nativeName"`
+		Official   string            `json:"official"`
+	} `json:"name"`
+}
+
+func cacheCountries() []Country {
+	rd := lib.GetRedisClient()
+	var rjson []Country
+	val := rd.JSONGet(context.Background(), "countries").Val()
+	if val != "" {
+		json.Unmarshal([]byte(val), &rjson)
+		return rjson
+	}
+	res, err := http.Get("https://restcountries.com/v3.1/all?fields=name,cca2,flag,timezones")
+	if err != nil {
+		log.Printf("Error response from API: %s\n", err.Error())
+		return []Country{}
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		log.Printf("Error reading response: %s\n", err.Error())
+		return []Country{}
+	}
+	json.Unmarshal(body, &rjson)
+	sort.Slice(rjson, func(i, j int) bool {
+		return rjson[i].Name.Common < rjson[j].Name.Common
+	})
+	rd.JSONSet(context.Background(), "countries", "$", rjson)
+
+	return rjson
+}
+
+func initLogger() {
+	cwd, _ := os.Getwd()
+	serverLogs := path.Join(cwd, "logs", "server.log")
+	apiLogs := path.Join(cwd, "logs", "api.log")
+	gin.ForceConsoleColor()
+
+	f, _ := os.Create(apiLogs)
+	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
+	log.SetOutput(&lumberjack.Logger{
+		Filename:   serverLogs,
+		MaxSize:    500,
+		MaxBackups: 3,
+		MaxAge:     30,
+		Compress:   true,
+	})
+}
+
 func main() {
+	apiEnv := os.Getenv("API_ENV")
+	if apiEnv == "local" {
+		cwd, _ := os.Getwd()
+		if err := godotenv.Load(path.Join(cwd, ".env")); err != nil {
+			panic(err)
+		}
+	}
+	if config.API_ENV != string(types.Production) && config.API_ENV != string(types.Test) {
+		initLogger()
+	}
+
 	boot.InitDb()
+	boot.InitScheduler()
+	lib.InitWebAuthn(time.Hour, !utils.IsProd())
 
 	go boot.DownloadSDKFileFromS3()
+	go boot.DownloadServiceKeyFromS3()
 	go lib.StripeInitialize()
-	// go boot.InitScheduler()
 	go boot.InitBroker()
+
+	go cacheCountries()
 
 	router := setupRouter()
 	wss := setupSocketServer(router)
@@ -439,9 +637,8 @@ func main() {
 		log.Println("WS server listening for connections...")
 	}
 
-	appEnv := os.Getenv("APP_ENV")
 	appHost := os.Getenv("APP_HOST")
-	if appEnv == "local" {
+	if apiEnv == "local" {
 		router.Use(cors.Default())
 	} else {
 		cc := cors.DefaultConfig()
@@ -474,13 +671,19 @@ func main() {
 
 	router = maintenanceModeMiddleware(router)
 
+	publicRoutes(router)
+
 	guestAuthRoutes(router)
 
 	stripeWebhookRoute(router)
 
-	authorized := router.Group("/api/v1")
+	authorized := router.Group(apiPrefix)
 	authorized.Use(middlewares.AuthMiddleware)
 	{
+		authorized.GET("/countries", func(ctx *gin.Context) {
+			countries := cacheCountries()
+			ctx.JSON(http.StatusOK, gin.H{"countries": countries})
+		})
 
 		authorized.
 			POST("/fcm", func(ctx *gin.Context) {
@@ -561,24 +764,16 @@ func main() {
 				}
 				uid := ctx.GetString("uid")
 
+				cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 				go func() {
+					defer cancel()
 					rd := lib.GetRedisClient()
 					token := rd.JSONGet(context.Background(), fmt.Sprintf("%s:fcm", uid), "$.token").Val()
 					fcm, _ := lib.GetFirebaseMessaging()
-					fcm.SubscribeToTopic(ctx.Copy(), []string{token}, "Notifications")
+					fcm.SubscribeToTopic(cctx, []string{token}, "Notifications")
 				}()
 
 				ctx.Status(http.StatusOK)
-			})
-
-		authorized.
-			POST("/users", func(ctx *gin.Context) {}).
-			GET("/users/:id", func(ctx *gin.Context) {
-				id, found := ctx.Params.Get("id")
-				ctx.JSON(http.StatusOK, gin.H{
-					"id":    id,
-					"found": found,
-				})
 			})
 
 		authorized = organizationHandlers(authorized)
@@ -588,6 +783,326 @@ func main() {
 		authorized = reservationHandlers(authorized)
 		authorized = admissionHandlers(authorized)
 		authorized = transactionHandlers(authorized)
+
+		authorized.
+			GET("/users/me", func(ctx *gin.Context) {
+				var user models.User
+				userId := ctx.GetUint("id")
+				db := db.GetDb()
+				if err := db.Transaction(func(tx *gorm.DB) error {
+					if err := tx.
+						Where(&models.User{ID: userId}).
+						First(&user).
+						Error; err != nil {
+						return err
+					}
+					return nil
+				}); err != nil {
+					ctx.Status(http.StatusBadRequest)
+				}
+
+				ctx.Status(http.StatusOK)
+			}).
+			PUT("/users/:id", func(ctx *gin.Context) {
+				ctx.Status(http.StatusNoContent)
+			})
+
+		accounts := authorized.Group("/accounts")
+		accounts.
+			GET("/:id/calendar", func(ctx *gin.Context) {
+				var params struct {
+					AccountID uint `uri:"id" binding:"required"`
+				}
+				if err := ctx.ShouldBindUri(&params); err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				var query struct {
+					AccountType string `form:"type" binding:"required"`
+				}
+				if err := ctx.ShouldBindQuery(&query); err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				var org models.Organization
+				var tok models.Token
+				db := db.GetDb()
+				if err := db.Transaction(func(tx *gorm.DB) error {
+					if err := tx.Model(&models.Organization{}).Where("id = ?", params.AccountID).First(&org).Error; err != nil {
+						return nil
+					}
+					if err := tx.
+						Where(&models.Token{
+							Type:          "AccessToken",
+							TokenName:     "calendar_token",
+							RequesterType: query.AccountType,
+							RequestedBy:   params.AccountID,
+							Status:        "active",
+						}).
+						First(&tok).
+						Error; err != nil {
+						return nil
+					}
+					return nil
+				}); err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				var token oauth2.Token
+				val, err := json.Marshal(tok.TokenValue)
+				if err != nil {
+					ctx.Status(http.StatusInternalServerError)
+					return
+				}
+				err = json.Unmarshal(val, &token)
+				if err != nil {
+					ctx.Status(http.StatusInternalServerError)
+					return
+				}
+				ctx.JSON(http.StatusOK, gin.H{"url": org.CalendarID})
+			}).
+			POST("/calendar/connect", func(ctx *gin.Context) {
+				var body struct {
+					Redirect string `json:"redirect" binding:"required"`
+				}
+				if err := ctx.ShouldBindJSON(&body); err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+
+				orgId := ctx.GetUint("org")
+				oauthcfg := &oauth2.Config{
+					RedirectURL:  config.API_HOST + "/api/v1/oauth/google/callback",
+					ClientID:     config.OAUTH_CLIENT_ID,
+					ClientSecret: config.OAUTH_CLIENT_SECRET,
+					Scopes: []string{
+						calendar.CalendarCalendarsScope,
+						calendar.CalendarEventsScope,
+					},
+					Endpoint: google.Endpoint,
+				}
+				// Generate nonce
+				nonce := make([]byte, 32)
+				rand.Read(nonce)
+				hnonce := hex.EncodeToString(nonce)
+				go func() {
+					ex := 3600 * time.Second
+					rd := lib.GetRedisClient()
+					rd.SetEx(
+						context.Background(),
+						fmt.Sprintf("org::%d:oauth:nonce", orgId),
+						hnonce,
+						ex,
+					)
+				}()
+
+				// Create code challenge and verifier
+				cv := pkce.NewCodeVerifierBytes(nonce)
+				cc := pkce.CodeChallengeS256(cv)
+
+				// Build state
+				state := &types.Oauth2FlowState{
+					AccountID:   orgId,
+					AccountType: "org",
+					Nonce:       hnonce,
+					Redirect:    body.Redirect,
+				}
+				// Serialize JSON
+				b, err := json.Marshal(state)
+				if err != nil {
+					ctx.Status(http.StatusInternalServerError)
+					return
+				}
+				keyBytes, err := hex.DecodeString(config.API_SECRET)
+				if err != nil {
+					log.Printf("Error while reading secret key: %s\n", err.Error())
+					ctx.Status(http.StatusInternalServerError)
+					return
+				}
+				enc, err := utils.EncryptMessage(keyBytes, string(b))
+				if err != nil {
+					log.Printf("Error while encrypting message: %s\n", err.Error())
+					ctx.Status(http.StatusInternalServerError)
+					return
+				}
+				authurl := oauthcfg.AuthCodeURL(
+					enc,
+					oauth2.AccessTypeOffline,
+					oauth2.SetAuthURLParam(pkce.ParamCodeChallenge, cc),
+					oauth2.SetAuthURLParam(pkce.ParamCodeChallengeMethod, pkce.MethodS256),
+				)
+				ctx.JSON(http.StatusOK, gin.H{"url": authurl})
+			}).
+			POST("/passkey/register/start", func(ctx *gin.Context) {
+				opts, status, err := controllers.AccountsPasskeyRegisterStart(ctx.Copy())
+				if err != nil {
+					log.Printf("[AccountsPasskeyRegisterStart] error: %s\n", err.Error())
+					ctx.Status(status)
+					return
+				}
+				ctx.JSON(http.StatusOK, opts.Response)
+			}).
+			POST("/passkey/register/finish", func(ctx *gin.Context) {
+				status, err := controllers.AccountsPasskeyRegisterFinish(ctx.Copy())
+				if err != nil {
+					log.Printf("[AccountsPasskeyRegisterFinish] error: %s\n", err.Error())
+					ctx.Status(status)
+					return
+				}
+				ctx.Status(http.StatusOK)
+			}).
+			GET("/devices", func(ctx *gin.Context) {
+				userId := ctx.GetUint("id")
+				devices, err := utils.GetCredentialsByUser(userId)
+				if err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				ctx.JSON(http.StatusOK, gin.H{"data": devices})
+			}).
+			PUT("/devices/revoke", func(ctx *gin.Context) {
+				var body struct {
+					DeviceName string `json:"name" binding:"required"`
+				}
+				if err := ctx.ShouldBindJSON(&body); err != nil {
+					log.Printf("Error validating request: %s\n", err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				userId := ctx.GetUint("id")
+				err := utils.RevokeCredential(userId, body.DeviceName)
+				if err != nil {
+					log.Printf("Error revoking credential: %s\n", err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				ctx.Status(http.StatusOK)
+			}).
+			POST("/verification/request_code", func(ctx *gin.Context) {
+				var body struct {
+					Email string `json:"email" binding:"required"`
+				}
+				if err := ctx.ShouldBindJSON(&body); err != nil {
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				bi, err := rand.Int(rand.Reader, big.NewInt(999_999))
+				if err != nil {
+					ctx.Status(http.StatusInternalServerError)
+					return
+				}
+				go func() {
+					db := db.GetDb()
+					if err := db.Transaction(func(tx *gorm.DB) error {
+						var user models.User
+						if err := tx.Where(&models.User{Email: body.Email}).Select("id").First(&user).Error; err != nil {
+							return err
+						}
+						var del models.Token
+						if err := tx.Model(&models.Token{}).Where("user_id = ? AND status = ?", user.ID, "pending").Update("status", "invalid").Error; err != nil {
+							return err
+						}
+						if err := tx.Model(&models.Token{}).Where("user_id = ? AND status = ?", user.ID, "invalid").Delete(&del).Error; err != nil {
+							return err
+						}
+						tok := &models.Token{
+							RequestedBy: user.ID,
+							Type:        "verification",
+							TokenName:   "mfa_verification_code",
+							TokenValue: types.JSONB{
+								"code": bi,
+							},
+							TTL: 600,
+						}
+						if err := tx.Create(tok).Error; err != nil {
+							return err
+						}
+						return nil
+					}); err != nil {
+						log.Printf("Error storing generated token: %s\n", err.Error())
+					}
+				}()
+				if err := mailer.NewMailerMessage(&lib.SendMailInput{
+					From:     config.SMTP_FROM,
+					FromName: "noreply",
+					Subject:  "Verify Authentication Code",
+					To:       []string{body.Email},
+					Body: fmt.Sprintf(`
+					<p>You have requested a verification code</p>
+					<p>Your verfication code: %d</p>
+				`, bi),
+					Html: true,
+				}); err != nil {
+					log.Printf("Could not send verification email to [%s]: %s\n", body.Email, err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				ctx.Status(http.StatusOK)
+			}).
+			POST("/verification/verify_code", func(ctx *gin.Context) {
+				var body struct {
+					Email string `json:"email" binding:"required"`
+					Code  string `json:"code" binding:"required"`
+				}
+				if err := ctx.ShouldBindJSON(&body); err != nil {
+					log.Printf("Error validating request: %s\n", err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				var token models.Token
+				db := db.GetDb()
+				tx := db.Begin()
+				var user models.User
+				if err := tx.
+					Model(&models.User{}).
+					Where("email = ?", body.Email).
+					First(&user).
+					Error; err != nil {
+					tx.Rollback()
+					log.Printf("Error retrieving user [%s]: %s\n", body.Email, err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				if err := tx.
+					Model(&models.Token{}).
+					Where("user_id = ? AND token_name = ? AND token_value ->> 'code' = ?", user.ID, "mfa_verification_code", body.Code).
+					First(&token).
+					Error; err != nil {
+					tx.Rollback()
+					log.Printf("Error retrieving token: %s\n", err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				if token.ExpiresAt.Before(time.Now()) {
+					tx.Rollback()
+					if err := tx.Model(&models.Token{}).Where("id = ?", token.ID).Update("status", "expired").Error; err != nil {
+						tx.Rollback()
+						log.Printf("Error updating expired token: %s\n", err.Error())
+						ctx.Status(http.StatusBadRequest)
+						return
+					}
+					err := errors.New("code has expired")
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				if err := tx.Model(&models.Token{}).Where("id = ?", token.ID).Update("status", "done").Error; err != nil {
+					tx.Rollback()
+					log.Printf("Error updating token status: %s\n", err.Error())
+					ctx.Status(http.StatusBadRequest)
+					return
+				}
+				tx.Commit()
+				ctx.Status(http.StatusOK)
+			}).
+			POST("/verify", func(ctx *gin.Context) {
+				status, err := controllers.AccountsVerify(ctx.Copy())
+				if err != nil {
+					log.Printf("[AccountsVerify] error: %s\n", err.Error())
+					ctx.Status(status)
+					return
+				}
+				ctx.Status(http.StatusOK)
+			})
 
 		authorized.
 			GET("/me", func(ctx *gin.Context) {
@@ -614,7 +1129,7 @@ func main() {
 					var muser models.User
 					if err := db.
 						Model(&models.User{}).
-						Select("id", "name", "email").
+						Select("id", "name", "email", "phone", "email_verified", "phone_verified").
 						Where(&models.User{Email: user.Email}).
 						First(&muser).
 						Error; err != nil {
@@ -624,13 +1139,14 @@ func main() {
 					}
 
 					mm := map[string]string{"photoURL": user.PhotoURL}
+					cctx := ctx.Copy()
 					go func() {
 						rd := lib.GetRedisClient()
-						_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:user", muser.ID), "$", &muser).Result()
+						_, err = rd.JSONSet(cctx, fmt.Sprintf("%d:user", muser.ID), "$", &muser).Result()
 						if err != nil {
 							log.Printf("[redis] Error updating user cache: %s\n", err.Error())
 						}
-						_, err = rd.JSONSet(ctx, fmt.Sprintf("%d:meta", muser.ID), "$", &mm).Result()
+						_, err = rd.JSONSet(cctx, fmt.Sprintf("%d:meta", muser.ID), "$", &mm).Result()
 						if err != nil {
 							log.Printf("[redis] Error updating user cache: %s\n", err.Error())
 						}
@@ -795,10 +1311,17 @@ func main() {
 				encryptedText := gcm.Seal(nonce, nonce, plainTextBytes, nil)
 
 				ctx.JSON(http.StatusOK, gin.H{"encrypted_text": encryptedText})
-			}).
-			GET("/jwt", func(ctx *gin.Context) {})
+			})
 	}
 
+	if os.Getenv("TLS_ENABLE") == "true" {
+		cwd, _ := os.Getwd()
+		certpath := path.Join(cwd, "certificates", "localhost.pem")
+		keypath := path.Join(cwd, "certificates", "localhost-key.pem")
+		if err := router.RunTLS(":9090", certpath, keypath); err != nil {
+			log.Fatalf("Failed to start server: %s", err)
+		}
+	}
 	if err := router.Run(":9090"); err != nil {
 		log.Fatalf("Failed to start server: %s", err)
 	}
@@ -807,27 +1330,4 @@ func main() {
 type EncryptRequestBody struct {
 	Key       string `json:"key" binding:"required"`
 	PlainText string `json:"plain_text" binding:"required"`
-}
-
-func generateJWT(email string, uid uint, orgId uint) (string, error) {
-	now := time.Now()
-	expirationTime := now.Add(24 * time.Hour)
-	permissionClaims := []string{
-		"user:read",
-		"user:update",
-	}
-	claims := &Claims{
-		Permissions:  permissionClaims,
-		Username:     email,
-		Organization: orgId,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   fmt.Sprintf("%d", uid),
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	return token.SignedString(jwtKey)
 }

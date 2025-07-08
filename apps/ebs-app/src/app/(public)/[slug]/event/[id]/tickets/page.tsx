@@ -29,7 +29,7 @@ export default async function BuyTicketsPage() {
   const canManage = event.organizer === org?.id
   return (
     <div className="">
-      <div className="relative max-w-7xl">
+      <div className="container relative max-w-7xl">
         <div className="flex items-center gap-2 w-full">
           <h1 className="text-4xl text-wrap break-words w-full">
             { event.title }
@@ -44,7 +44,7 @@ export default async function BuyTicketsPage() {
         </div>
         {tickets.length > 0 ?
         <div className="flex flex-col w-full">
-          <div className="grid grid-cols-12 gap-4 w-full max-w-7xl">
+          <div className="grid grid-flow-row xl:grid-cols-12 gap-4 w-full max-w-7xl">
           {tickets.map(ticket => (
             <TicketCard data={ticket} key={ticket.id} />
           ))}

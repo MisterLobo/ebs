@@ -233,6 +233,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.0"
+  device_info_plus:
+    dependency: transitive
+    description:
+      name: device_info_plus
+      sha256: "98f28b42168cc509abc92f88518882fd58061ea372d7999aecc424345c7bff6a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "11.5.0"
+  device_info_plus_platform_interface:
+    dependency: transitive
+    description:
+      name: device_info_plus_platform_interface
+      sha256: e1ea89119e34903dca74b883d0dd78eb762814f97fb6c76f35e9ff74d261a18f
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.0.3"
   diff_match_patch:
     dependency: transitive
     description:
@@ -265,6 +281,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.2"
+  ffi:
+    dependency: transitive
+    description:
+      name: ffi
+      sha256: "289279317b4b16eb2bb7e271abccd4bf84ec9bdcbe999e278a94b804f5630418"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.4"
   file:
     dependency: transitive
     description:
@@ -672,6 +696,70 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
+  package_info_plus:
+    dependency: transitive
+    description:
+      name: package_info_plus
+      sha256: "7976bfe4c583170d6cdc7077e3237560b364149fcd268b5f53d95a991963b191"
+      url: "https://pub.dev"
+    source: hosted
+    version: "8.3.0"
+  package_info_plus_platform_interface:
+    dependency: transitive
+    description:
+      name: package_info_plus_platform_interface
+      sha256: "6c935fb612dff8e3cc9632c2b301720c77450a126114126ffaafe28d2e87956c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.2.0"
+  passkeys:
+    dependency: "direct main"
+    description:
+      name: passkeys
+      sha256: "5ebfc2f28c203e47992a64bad72f4c4632690317d20175391e23f3c8f339c232"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.9.0"
+  passkeys_android:
+    dependency: transitive
+    description:
+      name: passkeys_android
+      sha256: "112d23b6c5a01c00c5e9e63a2d2633368546c51f0bf3a061691b8b0d77913435"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.7.1"
+  passkeys_doctor:
+    dependency: transitive
+    description:
+      name: passkeys_doctor
+      sha256: bfd0b3fe7de6b742ecaacff51289ae6f9dcc80d55eb6ddf39622b379182607ab
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
+  passkeys_ios:
+    dependency: transitive
+    description:
+      name: passkeys_ios
+      sha256: cb5bfa4c739dbf6c2cae0d2c20642a1ed5226666d424a442166a91a1b4a204f4
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.6.1"
+  passkeys_platform_interface:
+    dependency: transitive
+    description:
+      name: passkeys_platform_interface
+      sha256: "6003fafa1da65b3d73c582fc7f7ada358d38f2d511b98f8b8fd3077786f4b71c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.1"
+  passkeys_web:
+    dependency: transitive
+    description:
+      name: passkeys_web
+      sha256: "98d28223292738a9fbb24db33cdba00609675d54521694fdde45b7e5caf59b19"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.6.0"
   path:
     dependency: transitive
     description:
@@ -893,6 +981,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
+  ua_client_hints:
+    dependency: transitive
+    description:
+      name: ua_client_hints
+      sha256: "1b8759a46bfeab355252881df27f2604c01bded86aa2b578869fb1b638b23118"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.4.1"
   uuid:
     dependency: transitive
     description:
@@ -957,6 +1053,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.2.1"
+  win32:
+    dependency: transitive
+    description:
+      name: win32
+      sha256: "329edf97fdd893e0f1e3b9e88d6a0e627128cc17cc316a8d67fda8f1451178ba"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.13.0"
+  win32_registry:
+    dependency: transitive
+    description:
+      name: win32_registry
+      sha256: "6f1b564492d0147b330dd794fee8f512cec4977957f310f9951b5f9d83618dae"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.0"
   yaml:
     dependency: transitive
     description:
